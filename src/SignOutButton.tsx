@@ -15,6 +15,7 @@ export function SignOutButton() {
     await signOut();
     window.location.reload();
   };
+  
 
   return (
     <Button variant="outline" onClick={() => void handleSignOut()}>
