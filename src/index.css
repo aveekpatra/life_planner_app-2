@@ -1,0 +1,176 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Apple-inspired color scheme */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+
+    --radius: 0.75rem;
+
+    /* Apple-inspired variables */
+    --apple-blue: 211 100% 50%;
+    --apple-red: 0 100% 50%;
+    --apple-green: 142 76% 36%;
+    --apple-yellow: 48 100% 50%;
+    --apple-purple: 280 100% 50%;
+    --apple-pink: 340 82% 59%;
+
+    --apple-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --apple-shadow-md: 0 1px 3px rgba(0, 0, 0, 0.1);
+    --apple-shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.1);
+
+    /* Sidebar specific variables */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 221.2 83.2% 53.3%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-ring: 221.2 83.2% 53.3%;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+
+    /* Apple-inspired dark mode variables */
+    --apple-blue: 211 100% 60%;
+    --apple-red: 0 100% 60%;
+    --apple-green: 142 76% 45%;
+    --apple-yellow: 48 100% 60%;
+    --apple-purple: 280 100% 65%;
+    --apple-pink: 340 82% 65%;
+
+    --apple-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+    --apple-shadow-md: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --apple-shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.3);
+
+    /* Sidebar dark mode variables */
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    background-image: url("/photo-1486520299386-6d106b22014b.jpg");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
+    font-family:
+      -apple-system, BlinkMacSystemFont, "Inter Variable", ui-sans-serif,
+      system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans",
+      sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+      "Noto Color Emoji";
+  }
+
+  /* Apple-style glassmorphism */
+  .apple-glass {
+    @apply bg-white/60 dark:bg-white/10 backdrop-blur-sm rounded-[var(--radius)] border border-white/20 dark:border-white/5;
+    box-shadow: var(--apple-shadow-sm);
+  }
+
+  .apple-card {
+    @apply bg-white/80 dark:bg-black/60 backdrop-blur-md rounded-[var(--radius)] border border-white/30 dark:border-white/10;
+    box-shadow: var(--apple-shadow-md);
+  }
+}
+
+.input-field {
+  @apply w-full px-3 py-2 rounded-[var(--radius)] bg-background/90 border border-input focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent transition-colors;
+  box-shadow: var(--apple-shadow-sm);
+}
+
+.auth-button {
+  @apply w-full py-2 rounded-[var(--radius)] bg-accent text-accent-foreground font-medium hover:opacity-90 transition-all inline-flex items-center justify-center whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+  box-shadow: var(--apple-shadow);
+}
+
+.link-text {
+  @apply text-accent underline-offset-4 hover:underline cursor-pointer font-medium;
+}
+
+@layer components {
+  .apple-button {
+    @apply bg-[hsl(var(--apple-blue))] text-white px-4 py-2 font-medium transition-all hover:bg-[hsl(var(--apple-blue))/90] active:scale-[0.98] rounded-[var(--radius)];
+    box-shadow: var(--apple-shadow-sm);
+  }
+
+  /* Additional styles for sidebar */
+  [data-sidebar="sidebar"] {
+    @apply bg-white dark:bg-black/90 backdrop-blur-sm border-r border-border rounded-none;
+  }
+
+  [data-sidebar="menu-button"] {
+    @apply hover:bg-muted/80 data-[active=true]:bg-primary/10 data-[active=true]:text-primary data-[active=true]:font-medium rounded-none;
+  }
+
+  [data-sidebar="group-label"] {
+    @apply text-muted-foreground text-xs uppercase tracking-wider font-medium;
+  }
+
+  [data-sidebar="footer"] {
+    @apply border-t border-border;
+  }
+}
