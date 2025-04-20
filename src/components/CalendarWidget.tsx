@@ -79,6 +79,32 @@ const convertGoogleEvent = (event: GoogleCalendarEvent): CalendarEventBase => {
       .toString(16)
       .padStart(6, "0");
 
+  // Use the color from the event if available, otherwise use the generated one
+  // First try to use the calendar-specific color if available from our calendar info extension
+  let color = (event as any).calendarColor || defaultColor;
+
+  // Then check if the event has a colorId
+  if (event.colorId) {
+    // Google Calendar color IDs are 1-11
+    const colorMap: Record<string, string> = {
+      "1": "#7986cb", // Lavender
+      "2": "#33b679", // Sage
+      "3": "#8e24aa", // Grape
+      "4": "#e67c73", // Flamingo
+      "5": "#f6bf26", // Banana
+      "6": "#f4511e", // Tangerine
+      "7": "#039be5", // Peacock
+      "8": "#616161", // Graphite
+      "9": "#3f51b5", // Blueberry
+      "10": "#0b8043", // Basil
+      "11": "#d60000", // Tomato
+    };
+    color = colorMap[event.colorId] || color;
+  }
+
+  // Extract calendar name if available
+  const calendarName = (event as any).calendarTitle || "Google Calendar";
+
   return {
     _id: event.id,
     title: event.summary,
@@ -87,8 +113,8 @@ const convertGoogleEvent = (event: GoogleCalendarEvent): CalendarEventBase => {
     endDate: new Date(endDateTime).getTime(),
     location: event.location || "",
     isAllDay: !event.start.dateTime,
-    color: event.colorId ? `#${event.colorId}` : defaultColor,
-    category: "google",
+    color: color,
+    category: calendarName,
     source: "google",
   };
 };
@@ -170,14 +196,33 @@ export function CalendarWidget() {
   useEffect(() => {
     let allEvents: CalendarEventBase[] = localEventsData.map(convertLocalEvent);
 
-    if (isAuthorized && showGoogleEvents && googleEvents.length > 0) {
+    if (isAuthorized && showGoogleEvents) {
       console.log(
-        `Merging ${googleEvents.length} Google events with ${allEvents.length} local events`
+        `Google Calendar events available: ${googleEvents ? googleEvents.length : "none"}`
       );
-      const convertedGoogleEvents = googleEvents.map(convertGoogleEvent);
-      allEvents = [...allEvents, ...convertedGoogleEvents];
+
+      if (googleEvents && googleEvents.length > 0) {
+        console.log(
+          `Merging ${googleEvents.length} Google events with ${allEvents.length} local events`
+        );
+        const convertedGoogleEvents = googleEvents.map(convertGoogleEvent);
+        allEvents = [...allEvents, ...convertedGoogleEvents];
+
+        // Sort events by start date and then by all-day status (all-day events first)
+        allEvents.sort((a, b) => {
+          // All-day events come first
+          if (a.isAllDay && !b.isAllDay) return -1;
+          if (!a.isAllDay && b.isAllDay) return 1;
+
+          // Then sort by start date
+          return a.startDate - b.startDate;
+        });
+      } else {
+        console.log("No Google Calendar events to merge");
+      }
     }
 
+    console.log(`Total merged events: ${allEvents.length}`);
     setMergedEvents(allEvents);
   }, [localEventsData, googleEvents, isAuthorized, showGoogleEvents]);
 
@@ -208,8 +253,24 @@ export function CalendarWidget() {
         let startDate, endDate;
 
         if (view === "month") {
+          // Start from the beginning of the first week shown in the month view
+          // This ensures we get events that start in the previous month but show in the current month view
+          const firstDay = getFirstDayOfMonth(currentYear, currentMonth);
           startDate = new Date(currentYear, currentMonth, 1);
-          endDate = new Date(currentYear, currentMonth + 1, 0);
+          startDate.setDate(startDate.getDate() - firstDay); // Go back to include the first week
+
+          // End at the last day of the calendar grid
+          const daysInMonth = getDaysInMonth(currentYear, currentMonth);
+          const totalDaysShown = firstDay + daysInMonth;
+          const weeksNeeded = Math.ceil(totalDaysShown / 7);
+          const totalDaysInGrid = weeksNeeded * 7;
+          const remainingDays = totalDaysInGrid - totalDaysShown;
+
+          endDate = new Date(
+            currentYear,
+            currentMonth,
+            daysInMonth + remainingDays
+          );
         } else {
           const { start, end } = getWeekRange(currentDate);
           startDate = start;
@@ -217,14 +278,14 @@ export function CalendarWidget() {
         }
 
         console.log(
-          `[Date Range Change] Fetching for: ${startDate.toISOString()} to ${endDate.toISOString()}`
+          `[Date Range Change] Fetching for: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`
         );
 
         // Use void to ignore the Promise
         void refreshEvents(
-          "primary",
           startDate.toISOString(),
-          endDate.toISOString()
+          endDate.toISOString(),
+          "250" // Increase max results to ensure we get all events
         );
       }
     }
@@ -235,6 +296,7 @@ export function CalendarWidget() {
     view,
     currentYear,
     currentMonth,
+    currentDate,
   ]);
 
   // Initial events load when authorized
@@ -350,7 +412,25 @@ export function CalendarWidget() {
   ) => {
     if (day === null) return [];
 
+    const targetDate = new Date(year, month, day);
+    const targetDateStart = new Date(targetDate);
+    targetDateStart.setHours(0, 0, 0, 0);
+    const targetDateEnd = new Date(targetDate);
+    targetDateEnd.setHours(23, 59, 59, 999);
+
+    const targetStartTime = targetDateStart.getTime();
+    const targetEndTime = targetDateEnd.getTime();
+
     return mergedEvents.filter((event) => {
+      // For all-day events or events that span multiple days
+      if (event.isAllDay) {
+        // Check if target date falls within the event's timeframe
+        return (
+          event.startDate <= targetEndTime && event.endDate >= targetStartTime
+        );
+      }
+
+      // For regular timed events on this day
       const eventDate = new Date(event.startDate);
       return (
         eventDate.getDate() === day &&
@@ -361,7 +441,25 @@ export function CalendarWidget() {
   };
 
   const getEventsForDateObject = (date: Date) => {
+    const targetDate = new Date(date);
+    const targetDateStart = new Date(targetDate);
+    targetDateStart.setHours(0, 0, 0, 0);
+    const targetDateEnd = new Date(targetDate);
+    targetDateEnd.setHours(23, 59, 59, 999);
+
+    const targetStartTime = targetDateStart.getTime();
+    const targetEndTime = targetDateEnd.getTime();
+
     return mergedEvents.filter((event) => {
+      // For all-day events or events that span multiple days
+      if (event.isAllDay) {
+        // Check if target date falls within the event's timeframe
+        return (
+          event.startDate <= targetEndTime && event.endDate >= targetStartTime
+        );
+      }
+
+      // For regular timed events
       const eventDate = new Date(event.startDate);
       return (
         eventDate.getDate() === date.getDate() &&
@@ -404,8 +502,23 @@ export function CalendarWidget() {
       let startDate, endDate;
 
       if (view === "month") {
+        // Start from the beginning of the first week shown in the month view
+        const firstDay = getFirstDayOfMonth(currentYear, currentMonth);
         startDate = new Date(currentYear, currentMonth, 1);
-        endDate = new Date(currentYear, currentMonth + 1, 0);
+        startDate.setDate(startDate.getDate() - firstDay); // Go back to include the first week
+
+        // End at the last day of the calendar grid
+        const daysInMonth = getDaysInMonth(currentYear, currentMonth);
+        const totalDaysShown = firstDay + daysInMonth;
+        const weeksNeeded = Math.ceil(totalDaysShown / 7);
+        const totalDaysInGrid = weeksNeeded * 7;
+        const remainingDays = totalDaysInGrid - totalDaysShown;
+
+        endDate = new Date(
+          currentYear,
+          currentMonth,
+          daysInMonth + remainingDays
+        );
       } else {
         const { start, end } = getWeekRange(currentDate);
         startDate = start;
@@ -415,16 +528,19 @@ export function CalendarWidget() {
       console.log(
         `[Manual Refresh] Fetching for: ${startDate.toISOString()} to ${endDate.toISOString()}`
       );
-      console.log("Manually refreshing Google Calendar events");
+      console.log(
+        "Manually refreshing Google Calendar events from all calendars"
+      );
 
       // Use void to ignore the Promise
       void refreshEvents(
-        "primary",
         startDate.toISOString(),
         endDate.toISOString(),
-        100,
-        true // Force refresh, bypassing cache
+        "250", // Increased max results
+        "true" // Force refresh, bypassing cache
       );
+    } else {
+      console.log("Cannot refresh - not authorized with Google Calendar");
     }
   };
 
@@ -511,8 +627,14 @@ export function CalendarWidget() {
               onClick={toggleGoogleEvents}
             >
               Google Calendar
+              {showGoogleEvents &&
+                googleEvents.length > 0 &&
+                ` (${googleEvents.length})`}
             </Badge>
-            <Badge variant="secondary">Local Events</Badge>
+            <Badge variant="secondary">
+              Local Events
+              {localEventsData.length > 0 && ` (${localEventsData.length})`}
+            </Badge>
           </div>
           <Button
             variant="ghost"
@@ -563,8 +685,15 @@ export function CalendarWidget() {
                 currentMonth === today.getMonth() &&
                 currentYear === today.getFullYear();
 
-              const eventsForDay = getEventsForDate(day);
+              const eventsForDay = day !== null ? getEventsForDate(day) : [];
               const hasEvents = eventsForDay.length > 0;
+
+              // Sort events: all-day first, then by start time
+              const sortedEvents = [...eventsForDay].sort((a, b) => {
+                if (a.isAllDay && !b.isAllDay) return -1;
+                if (!a.isAllDay && b.isAllDay) return 1;
+                return a.startDate - b.startDate;
+              });
 
               return (
                 <div
@@ -579,25 +708,36 @@ export function CalendarWidget() {
                         {day}
                       </div>
                       <div className="space-y-1">
-                        {eventsForDay.slice(0, 3).map((event) => (
-                          <div
-                            key={event._id}
-                            className="text-xs truncate px-1 py-0.5 rounded flex items-center gap-1"
-                            style={{
-                              backgroundColor: `${event.color}20`,
-                              color: event.color,
-                              borderLeft: `2px solid ${event.color}`,
-                            }}
-                          >
-                            {event.source === "google" && (
-                              <div className="w-1 h-1 rounded-full bg-current" />
-                            )}
-                            <span className="truncate">{event.title}</span>
-                          </div>
-                        ))}
-                        {eventsForDay.length > 3 && (
+                        {sortedEvents.slice(0, 3).map((event) => {
+                          // Format the start time if not all-day
+                          const timeLabel = event.isAllDay
+                            ? "All day"
+                            : new Date(event.startDate).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              });
+
+                          return (
+                            <div
+                              key={event._id}
+                              className="text-xs truncate px-1 py-0.5 rounded flex items-center gap-1"
+                              style={{
+                                backgroundColor: `${event.color}20`,
+                                color: event.color,
+                                borderLeft: `2px solid ${event.color}`,
+                              }}
+                              title={`${event.title} - ${timeLabel}${event.location ? ` - ${event.location}` : ""}${event.category ? ` - ${event.category}` : ""}`}
+                            >
+                              {event.source === "google" && (
+                                <div className="w-1 h-1 rounded-full bg-current" />
+                              )}
+                              <span className="truncate">{event.title}</span>
+                            </div>
+                          );
+                        })}
+                        {sortedEvents.length > 3 && (
                           <div className="text-xs text-muted-foreground text-center">
-                            +{eventsForDay.length - 3} more
+                            +{sortedEvents.length - 3} more
                           </div>
                         )}
                       </div>
@@ -620,6 +760,21 @@ export function CalendarWidget() {
 
               const eventsForDay = getEventsForDateObject(date);
 
+              // Sort events: all-day first, then by start time
+              const sortedEvents = [...eventsForDay].sort((a, b) => {
+                if (a.isAllDay && !b.isAllDay) return -1;
+                if (!a.isAllDay && b.isAllDay) return 1;
+                return a.startDate - b.startDate;
+              });
+
+              // Separate all-day events from regular events
+              const allDayEvents = sortedEvents.filter(
+                (event) => event.isAllDay
+              );
+              const timedEvents = sortedEvents.filter(
+                (event) => !event.isAllDay
+              );
+
               return (
                 <div key={i} className="min-h-[140px] p-1 border">
                   <div className="h-full">
@@ -635,32 +790,78 @@ export function CalendarWidget() {
                         {date.getDate()}
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      {eventsForDay.map((event) => (
-                        <div
-                          key={event._id}
-                          className="text-xs truncate px-1 py-0.5 rounded"
-                          style={{
-                            backgroundColor: `${event.color}20`,
-                            color: event.color,
-                            borderLeft: `2px solid ${event.color}`,
-                          }}
-                        >
-                          <div className="flex items-center gap-1">
+
+                    {/* All-day events section */}
+                    {allDayEvents.length > 0 && (
+                      <div className="mb-1 border-b pb-1">
+                        {allDayEvents.map((event) => (
+                          <div
+                            key={`all-day-${event._id}`}
+                            className="text-xs px-1 py-0.5 mb-0.5 rounded flex items-center gap-0.5"
+                            style={{
+                              backgroundColor: `${event.color}20`,
+                              color: event.color,
+                              borderLeft: `2px solid ${event.color}`,
+                            }}
+                            title={`${event.title}${event.location ? ` - ${event.location}` : ""}`}
+                          >
                             {event.source === "google" && (
                               <div className="w-1 h-1 rounded-full bg-current" />
                             )}
-                            <span className="truncate">{event.title}</span>
+                            <div className="flex-grow truncate">
+                              {event.title}
+                            </div>
+                            <div className="flex-shrink-0 text-[8px]">
+                              All day
+                            </div>
                           </div>
-                          <div className="text-[10px]">
-                            {new Date(event.startDate).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Timed events section */}
+                    <div className="space-y-1 overflow-auto max-h-[120px]">
+                      {timedEvents.map((event) => {
+                        const startTime = new Date(
+                          event.startDate
+                        ).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        });
+
+                        const duration = Math.round(
+                          (event.endDate - event.startDate) / (60 * 1000)
+                        ); // minutes
+                        const durationText =
+                          duration < 60
+                            ? `${duration}m`
+                            : `${Math.floor(duration / 60)}h${duration % 60 ? ` ${duration % 60}m` : ""}`;
+
+                        return (
+                          <div
+                            key={`timed-${event._id}`}
+                            className="text-xs px-1 py-0.5 rounded"
+                            style={{
+                              backgroundColor: `${event.color}20`,
+                              color: event.color,
+                              borderLeft: `2px solid ${event.color}`,
+                            }}
+                            title={`${event.title} - ${startTime}${event.location ? ` - ${event.location}` : ""}${event.category ? ` - ${event.category}` : ""}`}
+                          >
+                            <div className="flex items-center gap-1">
+                              {event.source === "google" && (
+                                <div className="w-1 h-1 rounded-full bg-current" />
+                              )}
+                              <span className="truncate">{event.title}</span>
+                            </div>
+                            <div className="text-[10px] flex justify-between">
+                              <span>{startTime}</span>
+                              <span>{durationText}</span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                      {eventsForDay.length === 0 && (
+                        );
+                      })}
+                      {sortedEvents.length === 0 && (
                         <div className="text-xs text-muted-foreground text-center py-2">
                           No events
                         </div>
@@ -684,63 +885,99 @@ export function CalendarWidget() {
             </p>
           ) : (
             mergedEvents
+              // Filter to only show upcoming events (today and future)
+              .filter((event) => {
+                const now = new Date().getTime();
+                return event.endDate >= now;
+              })
+              // Sort by start date
               .sort((a, b) => a.startDate - b.startDate)
               .slice(0, 5)
-              .map((event) => (
-                <div
-                  key={event._id}
-                  className="p-3 border rounded-md flex items-start gap-3"
-                  style={{
-                    borderLeftWidth: "4px",
-                    borderLeftColor: event.color || "#3b82f6",
-                  }}
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-medium text-sm flex items-center gap-1">
-                        {event.source === "google" && (
-                          <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                        )}
-                        {event.title}
-                      </h4>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-secondary">
-                        {event.source === "google"
-                          ? "Google"
-                          : event.category || "other"}
-                      </span>
-                    </div>
-                    {event.description && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {event.description}
-                      </p>
-                    )}
-                    <div className="mt-1">
-                      <div className="text-xs text-muted-foreground">
+              .map((event) => {
+                const startDate = new Date(event.startDate);
+                const endDate = new Date(event.endDate);
+                const isToday =
+                  startDate.toDateString() === new Date().toDateString();
+                const isTomorrow =
+                  new Date(startDate).setHours(0, 0, 0, 0) ===
+                  new Date(
+                    new Date().setDate(new Date().getDate() + 1)
+                  ).setHours(0, 0, 0, 0);
+
+                // Format the date label based on when event occurs
+                let dateLabel = startDate.toLocaleDateString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                });
+
+                if (isToday) {
+                  dateLabel = "Today";
+                } else if (isTomorrow) {
+                  dateLabel = "Tomorrow";
+                }
+
+                return (
+                  <div
+                    key={event._id}
+                    className="p-3 border rounded-md flex items-start gap-3"
+                    style={{
+                      borderLeftWidth: "4px",
+                      borderLeftColor: event.color || "#3b82f6",
+                    }}
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-medium text-sm flex items-center gap-1.5">
+                          {event.source === "google" && (
+                            <div
+                              className="w-2 h-2 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: event.color }}
+                            />
+                          )}
+                          {event.title}
+                        </h4>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-secondary">
+                          {event.category ||
+                            (event.source === "google" ? "Google" : "other")}
+                        </span>
+                      </div>
+                      {event.description && (
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                          {event.description}
+                        </p>
+                      )}
+                      <div className="mt-1.5 flex items-center text-xs text-muted-foreground">
+                        <span className="font-medium">{dateLabel}</span>
+                        <span className="mx-1.5">•</span>
                         {event.isAllDay ? (
-                          <span>
-                            All day ·{" "}
-                            {new Date(event.startDate).toLocaleDateString()}
-                          </span>
+                          <span>All day</span>
                         ) : (
                           <span>
-                            {new Date(event.startDate).toLocaleTimeString([], {
+                            {startDate.toLocaleTimeString([], {
                               hour: "2-digit",
                               minute: "2-digit",
-                            })}{" "}
-                            -{" "}
-                            {new Date(event.endDate).toLocaleTimeString([], {
+                            })}
+                            {" - "}
+                            {endDate.toLocaleTimeString([], {
                               hour: "2-digit",
                               minute: "2-digit",
-                            })}{" "}
-                            · {new Date(event.startDate).toLocaleDateString()}
+                            })}
                           </span>
                         )}
-                        {event.location && <span> · {event.location}</span>}
+                        {event.location && (
+                          <>
+                            <span className="mx-1.5">•</span>
+                            <span className="truncate max-w-[150px]">
+                              {event.location}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
           )}
         </div>
       </div>

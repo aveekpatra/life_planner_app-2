@@ -21,6 +21,10 @@ if (!API_KEY) {
   console.warn("Google Calendar API_KEY is not set in environment variables");
 }
 
+// Add constants for localStorage keys
+const LOCAL_STORAGE_AUTH_KEY = "google_calendar_auth_state";
+const LOCAL_STORAGE_TOKEN_KEY = "google_calendar_token";
+
 // Types for Google Calendar events
 export interface GoogleCalendarEvent {
   id: string;
@@ -95,6 +99,9 @@ export class GoogleCalendarService {
       "GoogleCalendarService initialized with REDIRECT_URI:",
       REDIRECT_URI
     );
+
+    // Try to restore auth state from localStorage immediately
+    this.loadSavedAuthState();
   }
 
   /**
@@ -226,6 +233,9 @@ export class GoogleCalendarService {
           this.isAuthorized = true;
           console.log("Successfully authorized with Google, token received");
 
+          // Save auth state to localStorage immediately
+          this.saveAuthState();
+
           // Resolve the promise from the authorize method if it exists
           if (this.authPromiseResolve) {
             this.authPromiseResolve();
@@ -262,6 +272,105 @@ export class GoogleCalendarService {
       );
     }
     return loaded;
+  }
+
+  /**
+   * Save current auth state to localStorage
+   */
+  private saveAuthState(): void {
+    try {
+      if (this.isAuthorized && this.accessToken) {
+        localStorage.setItem(
+          LOCAL_STORAGE_AUTH_KEY,
+          JSON.stringify({
+            isAuthorized: this.isAuthorized,
+            timestamp: Date.now(),
+          })
+        );
+
+        // Store token separately
+        localStorage.setItem(LOCAL_STORAGE_TOKEN_KEY, this.accessToken);
+        console.log("Saved auth state to localStorage");
+      }
+    } catch (error) {
+      console.error("Failed to save auth state:", error);
+    }
+  }
+
+  /**
+   * Load saved auth state from localStorage
+   */
+  private loadSavedAuthState(): void {
+    try {
+      const savedState = localStorage.getItem(LOCAL_STORAGE_AUTH_KEY);
+      const savedToken = localStorage.getItem(LOCAL_STORAGE_TOKEN_KEY);
+
+      if (savedState && savedToken) {
+        const state = JSON.parse(savedState);
+
+        // Only restore if saved within the last 24 hours
+        const isRecent = Date.now() - state.timestamp < 24 * 60 * 60 * 1000;
+
+        if (isRecent) {
+          this.isAuthorized = state.isAuthorized;
+          this.accessToken = savedToken;
+          console.log("Restored auth state from localStorage");
+        } else {
+          console.log("Saved auth state is too old, not restoring");
+          this.clearSavedAuthState();
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load saved auth state:", error);
+      this.clearSavedAuthState();
+    }
+  }
+
+  /**
+   * Clear saved auth state from localStorage
+   */
+  private clearSavedAuthState(): void {
+    try {
+      localStorage.removeItem(LOCAL_STORAGE_AUTH_KEY);
+      localStorage.removeItem(LOCAL_STORAGE_TOKEN_KEY);
+      console.log("Cleared saved auth state");
+    } catch (error) {
+      console.error("Failed to clear saved auth state:", error);
+    }
+  }
+
+  /**
+   * Attempt to restore authorization state from existing token
+   * This should be called after APIs are loaded to restore state on page refresh
+   */
+  public restoreAuthState(): void {
+    if (!this.isLoaded()) {
+      console.log("Cannot restore auth state - APIs not loaded yet");
+      return;
+    }
+
+    // Try to set the token from localStorage if we have it
+    if (this.accessToken && !gapi.client.getToken()) {
+      console.log("Setting saved token to gapi client");
+      try {
+        gapi.client.setToken({ access_token: this.accessToken });
+      } catch (error) {
+        console.error("Failed to set token:", error);
+      }
+    }
+
+    const token = gapi.client.getToken();
+    if (token !== null) {
+      console.log("Found existing token, restoring auth state");
+      this.isAuthorized = true;
+      this.accessToken = token.access_token;
+
+      // Save this back to localStorage
+      this.saveAuthState();
+      return;
+    }
+
+    console.log("No existing token found");
   }
 
   /**
@@ -321,7 +430,7 @@ export class GoogleCalendarService {
         `Fetching events for ${calendarId} from ${timeMin} to ${timeMax} (max: ${maxResults})`
       );
 
-      // Fixed this return so it properly returns the Promise result
+      // Improved response handling with better logging
       return await gapi.client.calendar.events
         .list({
           calendarId,
@@ -332,11 +441,31 @@ export class GoogleCalendarService {
           orderBy: "startTime",
         })
         .then((response) => {
+          // Log detailed response info for debugging
+          console.log(`Calendar API response status: ${response.status}`);
+          console.log(`Calendar API response has result: ${!!response.result}`);
+
+          if (!response.result) {
+            console.warn("Calendar API returned empty result");
+            return { items: [] };
+          }
+
+          if (!response.result.items) {
+            console.warn("Calendar API result missing items array");
+            console.log("Full response:", JSON.stringify(response.result));
+            // Return empty items array as fallback
+            return { items: [] };
+          }
+
+          console.log(
+            `Calendar API returned ${response.result.items.length} events`
+          );
           return response.result;
         });
     } catch (error) {
       console.error("Error fetching events:", error);
-      throw error;
+      // Return empty items array on error
+      return { items: [] };
     }
   }
 
@@ -446,10 +575,17 @@ export class GoogleCalendarService {
         gapi.client.setToken(null);
         this.isAuthorized = false;
         this.accessToken = null;
+
+        // Clear saved auth state
+        this.clearSavedAuthState();
+
         console.log("Signed out of Google");
       });
     } else {
       console.log("No token to revoke");
+
+      // Clear saved auth state anyway
+      this.clearSavedAuthState();
     }
   }
 
@@ -488,6 +624,51 @@ export class GoogleCalendarService {
     } catch (error) {
       console.error("Error getting token info:", error);
       return null;
+    }
+  }
+
+  /**
+   * Attempt to refresh an expired token
+   * @returns A promise that resolves when token is refreshed or rejects if refresh fails
+   */
+  public refreshToken(): Promise<void> {
+    console.log("Attempting to refresh the access token");
+
+    return new Promise((resolve, reject) => {
+      if (!this.isLoaded()) {
+        reject(new Error("Google APIs not loaded yet"));
+        return;
+      }
+
+      this.authPromiseResolve = resolve;
+      this.authPromiseReject = reject;
+
+      try {
+        // Request a new token
+        this.tokenClient!.requestAccessToken({
+          prompt: "", // Skip UI if possible
+        });
+      } catch (error) {
+        console.error("Error refreshing token:", error);
+        this.authPromiseReject = null;
+        this.authPromiseResolve = null;
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Ensures Google API is initialized and user is authorized
+   * Refreshes token if needed
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (!this.isLoaded()) {
+      throw new Error("Google APIs not loaded yet");
+    }
+
+    if (!this.isAuthorized) {
+      console.log("Not authorized, authorizing first");
+      await this.authorize();
     }
   }
 }
