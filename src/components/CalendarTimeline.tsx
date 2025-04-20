@@ -1,7 +1,11 @@
-import { ChevronRight, ChevronLeft, X } from "lucide-react";
-import { useState } from "react";
+import { ChevronRight, ChevronLeft, X, RefreshCw } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { useGoogleCalendar } from "../hooks/useGoogleCalendar";
+import { GoogleCalendarEvent } from "../services/GoogleCalendarService";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
 
 // Create a simplified type matching the events schema for better TypeScript support
 type Event = {
@@ -14,6 +18,7 @@ type Event = {
   category?: string;
   isAllDay: boolean;
   color?: string;
+  source?: "local" | "google";
 };
 
 // Date utility functions to replace date-fns
@@ -79,9 +84,49 @@ const endOfDay = (date: Date): Date => {
   return newDate;
 };
 
+// Convert Google Calendar event to our unified format
+const convertGoogleEvent = (event: GoogleCalendarEvent): Event => {
+  const startDateTime = event.start.dateTime || event.start.date || "";
+  const endDateTime = event.end.dateTime || event.end.date || "";
+
+  // Generate a color based on event summary if no color provided
+  const defaultColor =
+    "#" +
+    Math.floor(
+      Math.abs(
+        (event.summary.charCodeAt(0) || 65) *
+          (event.summary.charCodeAt(1) || 66)
+      ) % 16777215
+    )
+      .toString(16)
+      .padStart(6, "0");
+
+  return {
+    _id: event.id,
+    title: event.summary,
+    description: event.description || "",
+    startDate: new Date(startDateTime).getTime(),
+    endDate: new Date(endDateTime).getTime(),
+    location: event.location || "",
+    isAllDay: !event.start.dateTime,
+    color: event.colorId ? `#${event.colorId}` : defaultColor,
+    source: "google",
+  };
+};
+
 export function CalendarTimeline({ onClose }: { onClose: () => void }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const events = useQuery(api.events.list) || [];
+  const [mergedEvents, setMergedEvents] = useState<Event[]>([]);
+  const [showGoogleEvents, setShowGoogleEvents] = useState(true);
+  const localEvents = useQuery(api.events.list) || [];
+
+  const {
+    isLoading,
+    error,
+    events: googleEvents,
+    isAuthorized,
+    refreshEvents,
+  } = useGoogleCalendar();
 
   // Navigate to previous/next day
   const goToPreviousDay = () => {
@@ -92,8 +137,65 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
     setSelectedDate((prev) => addDays(prev, 1));
   };
 
+  // Merge local and Google Calendar events
+  useEffect(() => {
+    let allEvents: Event[] = [...localEvents];
+
+    if (isAuthorized && showGoogleEvents && googleEvents.length > 0) {
+      const convertedGoogleEvents = googleEvents.map(convertGoogleEvent);
+      allEvents = [...allEvents, ...convertedGoogleEvents];
+    }
+
+    setMergedEvents(allEvents);
+  }, [localEvents, googleEvents, isAuthorized, showGoogleEvents]);
+
+  // Fetch Google Calendar events when the selected date changes
+  useEffect(() => {
+    if (isAuthorized) {
+      const dayStart = startOfDay(selectedDate);
+      const dayEnd = endOfDay(selectedDate);
+
+      console.log(
+        `Fetching Google Calendar events for: ${dayStart.toISOString()} to ${dayEnd.toISOString()}`
+      );
+
+      // Use void to ignore the Promise
+      void refreshEvents(
+        "primary",
+        dayStart.toISOString(),
+        dayEnd.toISOString()
+      );
+    }
+  }, [isAuthorized, refreshEvents, selectedDate]);
+
+  // Toggle Google Calendar events visibility
+  const toggleGoogleEvents = () => {
+    setShowGoogleEvents(!showGoogleEvents);
+  };
+
+  // Handle manual refresh of Google Calendar events
+  const handleRefreshGoogleEvents = () => {
+    if (isAuthorized) {
+      const dayStart = startOfDay(selectedDate);
+      const dayEnd = endOfDay(selectedDate);
+
+      console.log(
+        `Manually refreshing Google Calendar events for: ${dayStart.toISOString()} to ${dayEnd.toISOString()}`
+      );
+
+      // Use void to ignore the Promise
+      void refreshEvents(
+        "primary",
+        dayStart.toISOString(),
+        dayEnd.toISOString(),
+        100,
+        true // Force refresh, bypassing cache
+      );
+    }
+  };
+
   // Filter events for the selected day
-  const dayEvents = events.filter((event) => {
+  const dayEvents = mergedEvents.filter((event) => {
     // Convert database timestamp (milliseconds) to Date object
     const eventStart = new Date(event.startDate);
     const eventEnd = new Date(event.endDate);
@@ -181,6 +283,40 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
+      {/* Google Calendar controls */}
+      {isAuthorized && (
+        <div className="px-4 py-2 border-b flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Badge
+              variant={showGoogleEvents ? "default" : "outline"}
+              className="cursor-pointer"
+              onClick={toggleGoogleEvents}
+            >
+              Google Calendar
+            </Badge>
+            <Badge variant="secondary">Local Events</Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRefreshGoogleEvents}
+            disabled={isLoading}
+            className="flex items-center gap-1"
+          >
+            <RefreshCw
+              className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`}
+            />
+            <span className="text-xs">Refresh</span>
+          </Button>
+        </div>
+      )}
+
+      {error && (
+        <div className="px-4 py-2 bg-destructive/10 text-destructive text-sm">
+          Error: {error.message}
+        </div>
+      )}
+
       {/* Timeline */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="relative">
@@ -223,9 +359,12 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
                 >
                   <div className="p-2">
                     <div
-                      className="font-medium text-xs truncate"
+                      className="font-medium text-xs truncate flex items-center gap-1"
                       style={{ color: eventColor }}
                     >
+                      {event.source === "google" && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                      )}
                       {event.title}
                     </div>
                     <div className="text-xs text-muted-foreground">
@@ -263,9 +402,12 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
                     }}
                   >
                     <div
-                      className="font-medium text-xs"
+                      className="font-medium text-xs flex items-center gap-1"
                       style={{ color: getEventColor(event) }}
                     >
+                      {event.source === "google" && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                      )}
                       {event.title}
                     </div>
                     {event.location && (

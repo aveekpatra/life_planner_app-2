@@ -1,8 +1,13 @@
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
-import { CalendarDays, CalendarRange } from "lucide-react";
+import { CalendarDays, CalendarRange, RefreshCw } from "lucide-react";
+import { useGoogleCalendar } from "../hooks/useGoogleCalendar";
+import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
+import { GoogleCalendarEvent } from "../services/GoogleCalendarService";
+import { Doc, Id } from "../../convex/_generated/dataModel";
 
 // Helper function to create calendar grid
 const getDaysInMonth = (year: number, month: number): number => {
@@ -43,13 +48,216 @@ const MONTHS = [
 
 type CalendarView = "month" | "week";
 
+// Define a unified event type that works for both local and Google events
+interface CalendarEventBase {
+  _id: string;
+  title: string;
+  description?: string;
+  startDate: number;
+  endDate: number;
+  location?: string;
+  category?: string;
+  isAllDay?: boolean;
+  color?: string;
+  source: "local" | "google";
+}
+
+// Convert Google Calendar event to our unified format
+const convertGoogleEvent = (event: GoogleCalendarEvent): CalendarEventBase => {
+  const startDateTime = event.start.dateTime || event.start.date || "";
+  const endDateTime = event.end.dateTime || event.end.date || "";
+
+  // Generate a color based on event summary if no color provided
+  const defaultColor =
+    "#" +
+    Math.floor(
+      Math.abs(
+        (event.summary.charCodeAt(0) || 65) *
+          (event.summary.charCodeAt(1) || 66)
+      ) % 16777215
+    )
+      .toString(16)
+      .padStart(6, "0");
+
+  return {
+    _id: event.id,
+    title: event.summary,
+    description: event.description || "",
+    startDate: new Date(startDateTime).getTime(),
+    endDate: new Date(endDateTime).getTime(),
+    location: event.location || "",
+    isAllDay: !event.start.dateTime,
+    color: event.colorId ? `#${event.colorId}` : defaultColor,
+    category: "google",
+    source: "google",
+  };
+};
+
+// Convert local event to our unified format
+const convertLocalEvent = (event: Doc<"events">): CalendarEventBase => {
+  return {
+    _id: event._id as unknown as string, // Convert ID to string for unified handling
+    title: event.title,
+    description: event.description,
+    startDate: event.startDate,
+    endDate: event.endDate,
+    location: event.location,
+    category: event.category,
+    isAllDay: event.isAllDay,
+    color: event.color,
+    source: "local",
+  };
+};
+
 export function CalendarWidget() {
-  const events = useQuery(api.events.list) || [];
+  const localEventsData = useQuery(api.events.list) || [];
+
+  // Debug the current date
+  const realToday = new Date();
+  console.log(`Real today's date: ${realToday.toISOString()}`);
+  console.log(`Current year should be: ${realToday.getFullYear()}`);
+  console.log(`Current month should be: ${realToday.getMonth()}`);
+
+  // Force the correct date to ensure we're not using a future date
   const today = new Date();
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentDate, setCurrentDate] = useState(today);
+
+  // Log the initialized state to debug
+  console.log(
+    `CalendarWidget initialized with year: ${currentYear}, month: ${currentMonth}`
+  );
+
   const [view, setView] = useState<CalendarView>("month");
+  const [mergedEvents, setMergedEvents] = useState<CalendarEventBase[]>([]);
+  const [showGoogleEvents, setShowGoogleEvents] = useState(true);
+  const eventsInitialized = useRef(false);
+  const lastFetchedMonth = useRef<string>("");
+
+  const {
+    isLoading,
+    error,
+    events: googleEvents,
+    isAuthorized,
+    refreshEvents,
+  } = useGoogleCalendar();
+
+  // Force reset the date if we detect an unreasonable future date (> 1 year from now)
+  useEffect(() => {
+    const realNow = new Date();
+    const oneYearFromNow = new Date();
+    oneYearFromNow.setFullYear(realNow.getFullYear() + 1);
+
+    if (
+      currentYear > oneYearFromNow.getFullYear() ||
+      (currentYear === oneYearFromNow.getFullYear() &&
+        currentMonth > oneYearFromNow.getMonth())
+    ) {
+      console.log(
+        `Correcting unreasonable future date: ${currentYear}-${currentMonth + 1} to ${realNow.getFullYear()}-${realNow.getMonth() + 1}`
+      );
+      setCurrentYear(realNow.getFullYear());
+      setCurrentMonth(realNow.getMonth());
+      setCurrentDate(realNow);
+
+      // Clear the last fetched month to force a refresh
+      lastFetchedMonth.current = "";
+    }
+  }, [currentYear, currentMonth]);
+
+  // Merge events from both sources
+  useEffect(() => {
+    let allEvents: CalendarEventBase[] = localEventsData.map(convertLocalEvent);
+
+    if (isAuthorized && showGoogleEvents && googleEvents.length > 0) {
+      console.log(
+        `Merging ${googleEvents.length} Google events with ${allEvents.length} local events`
+      );
+      const convertedGoogleEvents = googleEvents.map(convertGoogleEvent);
+      allEvents = [...allEvents, ...convertedGoogleEvents];
+    }
+
+    setMergedEvents(allEvents);
+  }, [localEventsData, googleEvents, isAuthorized, showGoogleEvents]);
+
+  // Function to get date range key for the current view
+  const getDateRangeKey = useCallback(() => {
+    if (view === "month") {
+      return `${currentYear}-${currentMonth}`;
+    } else {
+      const { start } = getWeekRange(currentDate);
+      return `${start.getFullYear()}-${start.getMonth()}-${start.getDate()}`;
+    }
+  }, [view, currentYear, currentMonth, currentDate]);
+
+  // Fetch Google Calendar events when authorized or when date range changes
+  useEffect(() => {
+    if (isAuthorized) {
+      const currentDateRange = getDateRangeKey();
+
+      console.log(
+        `Current date range key: ${currentDateRange} (Year: ${currentYear}, Month: ${currentMonth})`
+      );
+
+      // Only fetch if we haven't fetched this date range yet
+      if (currentDateRange !== lastFetchedMonth.current) {
+        console.log(`Fetching events for new date range: ${currentDateRange}`);
+        lastFetchedMonth.current = currentDateRange;
+
+        let startDate, endDate;
+
+        if (view === "month") {
+          startDate = new Date(currentYear, currentMonth, 1);
+          endDate = new Date(currentYear, currentMonth + 1, 0);
+        } else {
+          const { start, end } = getWeekRange(currentDate);
+          startDate = start;
+          endDate = end;
+        }
+
+        console.log(
+          `[Date Range Change] Fetching for: ${startDate.toISOString()} to ${endDate.toISOString()}`
+        );
+
+        // Use void to ignore the Promise
+        void refreshEvents(
+          "primary",
+          startDate.toISOString(),
+          endDate.toISOString()
+        );
+      }
+    }
+  }, [
+    isAuthorized,
+    getDateRangeKey,
+    refreshEvents,
+    view,
+    currentYear,
+    currentMonth,
+  ]);
+
+  // Initial events load when authorized
+  useEffect(() => {
+    if (isAuthorized && !eventsInitialized.current && !isLoading) {
+      eventsInitialized.current = true;
+      console.log("Initial load of Google Calendar events");
+
+      const startOfMonth = new Date(currentYear, currentMonth, 1);
+      const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
+
+      console.log(
+        `[Initial Load] Fetching for: ${startOfMonth.toISOString()} to ${endOfMonth.toISOString()}`
+      );
+
+      // Use void to ignore the Promise
+      void refreshEvents(
+        "primary",
+        startOfMonth.toISOString(),
+        endOfMonth.toISOString()
+      );
+    }
+  }, [isAuthorized, isLoading, refreshEvents, currentYear, currentMonth]);
 
   // Navigate to previous/next month or week
   const goToPrevious = () => {
@@ -95,6 +303,9 @@ export function CalendarWidget() {
       setCurrentMonth(currentDate.getMonth());
       setCurrentYear(currentDate.getFullYear());
     }
+
+    // Reset the last fetched month to force a refresh with the new view
+    lastFetchedMonth.current = "";
   };
 
   // Generate days for the calendar grid
@@ -139,7 +350,7 @@ export function CalendarWidget() {
   ) => {
     if (day === null) return [];
 
-    return events.filter((event) => {
+    return mergedEvents.filter((event) => {
       const eventDate = new Date(event.startDate);
       return (
         eventDate.getDate() === day &&
@@ -150,7 +361,7 @@ export function CalendarWidget() {
   };
 
   const getEventsForDateObject = (date: Date) => {
-    return events.filter((event) => {
+    return mergedEvents.filter((event) => {
       const eventDate = new Date(event.startDate);
       return (
         eventDate.getDate() === date.getDate() &&
@@ -182,6 +393,44 @@ export function CalendarWidget() {
         return `${startMonth} ${start.getDate()} - ${endMonth} ${end.getDate()}, ${end.getFullYear()}`;
       }
     }
+  };
+
+  // Handle manual refresh of Google Calendar events
+  const handleRefreshGoogleEvents = () => {
+    if (isAuthorized) {
+      // Force a refresh by clearing the last fetched flag
+      lastFetchedMonth.current = "";
+
+      let startDate, endDate;
+
+      if (view === "month") {
+        startDate = new Date(currentYear, currentMonth, 1);
+        endDate = new Date(currentYear, currentMonth + 1, 0);
+      } else {
+        const { start, end } = getWeekRange(currentDate);
+        startDate = start;
+        endDate = end;
+      }
+
+      console.log(
+        `[Manual Refresh] Fetching for: ${startDate.toISOString()} to ${endDate.toISOString()}`
+      );
+      console.log("Manually refreshing Google Calendar events");
+
+      // Use void to ignore the Promise
+      void refreshEvents(
+        "primary",
+        startDate.toISOString(),
+        endDate.toISOString(),
+        100,
+        true // Force refresh, bypassing cache
+      );
+    }
+  };
+
+  // Toggle Google Calendar events visibility
+  const toggleGoogleEvents = () => {
+    setShowGoogleEvents(!showGoogleEvents);
   };
 
   return (
@@ -253,6 +502,45 @@ export function CalendarWidget() {
         </div>
       </div>
 
+      {isAuthorized && (
+        <div className="mb-4 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Badge
+              variant={showGoogleEvents ? "default" : "outline"}
+              className="cursor-pointer"
+              onClick={toggleGoogleEvents}
+            >
+              Google Calendar
+            </Badge>
+            <Badge variant="secondary">Local Events</Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRefreshGoogleEvents}
+            disabled={isLoading}
+            className="flex items-center gap-1"
+          >
+            <RefreshCw
+              className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`}
+            />
+            <span className="text-xs">Refresh</span>
+          </Button>
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-4 p-2 bg-destructive/10 text-destructive text-sm rounded-md">
+          Error: {error.message}
+        </div>
+      )}
+
+      {isAuthorized && googleEvents.length === 0 && !isLoading && (
+        <div className="mb-4 p-2 bg-muted text-muted-foreground text-sm rounded-md">
+          No Google Calendar events found for this time period
+        </div>
+      )}
+
       <div className="border rounded-md overflow-hidden">
         {/* Calendar header */}
         <div className="grid grid-cols-7 bg-muted">
@@ -294,14 +582,17 @@ export function CalendarWidget() {
                         {eventsForDay.slice(0, 3).map((event) => (
                           <div
                             key={event._id}
-                            className="text-xs truncate px-1 py-0.5 rounded"
+                            className="text-xs truncate px-1 py-0.5 rounded flex items-center gap-1"
                             style={{
                               backgroundColor: `${event.color}20`,
                               color: event.color,
                               borderLeft: `2px solid ${event.color}`,
                             }}
                           >
-                            {event.title}
+                            {event.source === "google" && (
+                              <div className="w-1 h-1 rounded-full bg-current" />
+                            )}
+                            <span className="truncate">{event.title}</span>
                           </div>
                         ))}
                         {eventsForDay.length > 3 && (
@@ -355,7 +646,12 @@ export function CalendarWidget() {
                             borderLeft: `2px solid ${event.color}`,
                           }}
                         >
-                          <div>{event.title}</div>
+                          <div className="flex items-center gap-1">
+                            {event.source === "google" && (
+                              <div className="w-1 h-1 rounded-full bg-current" />
+                            )}
+                            <span className="truncate">{event.title}</span>
+                          </div>
                           <div className="text-[10px]">
                             {new Date(event.startDate).toLocaleTimeString([], {
                               hour: "2-digit",
@@ -382,12 +678,12 @@ export function CalendarWidget() {
       <div className="mt-6">
         <h3 className="text-sm font-medium mb-3">Upcoming Events</h3>
         <div className="space-y-3">
-          {events.length === 0 ? (
+          {mergedEvents.length === 0 ? (
             <p className="text-center py-8 text-muted-foreground">
               No events yet
             </p>
           ) : (
-            events
+            mergedEvents
               .sort((a, b) => a.startDate - b.startDate)
               .slice(0, 5)
               .map((event) => (
@@ -401,9 +697,16 @@ export function CalendarWidget() {
                 >
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
-                      <h4 className="font-medium text-sm">{event.title}</h4>
+                      <h4 className="font-medium text-sm flex items-center gap-1">
+                        {event.source === "google" && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                        )}
+                        {event.title}
+                      </h4>
                       <span className="text-xs px-2 py-0.5 rounded-full bg-secondary">
-                        {event.category || "other"}
+                        {event.source === "google"
+                          ? "Google"
+                          : event.category || "other"}
                       </span>
                     </div>
                     {event.description && (

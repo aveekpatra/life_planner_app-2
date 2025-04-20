@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -26,6 +26,8 @@ import {
   User,
   CalendarClock,
   ExternalLink,
+  Check,
+  Loader2,
 } from "lucide-react";
 import { SignOutButton } from "../SignOutButton";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -35,6 +37,8 @@ import { Separator } from "./ui/separator";
 import { CalendarTimeline } from "./CalendarTimeline";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
+import { useGoogleCalendar } from "../hooks/useGoogleCalendar";
+import { useToast } from "../hooks/use-toast";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -79,7 +83,7 @@ function CollapsibleFooter() {
           )}
         >
           <Avatar className="h-8 w-8 shrink-0">
-            <AvatarImage src={user?.pictureURL} />
+            <AvatarImage src={user?.image} />
             <AvatarFallback>{user?.name?.[0] || "U"}</AvatarFallback>
           </Avatar>
           <div
@@ -89,11 +93,7 @@ function CollapsibleFooter() {
             {user?.name || "User"}
           </div>
         </div>
-        <SignOutButton
-          className="h-8 w-8 shrink-0"
-          variant="ghost"
-          size="icon"
-        />
+        <SignOutButton />
       </div>
     </SidebarFooter>
   );
@@ -104,10 +104,43 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
   const { state } = useSidebar();
   const isLeftSidebarCollapsed = state === "collapsed";
   const [showTimeline, setShowTimeline] = React.useState(false);
+  const { toast } = useToast();
+  const {
+    isLoading,
+    error,
+    isAuthorized,
+    connectToGoogleCalendar,
+    disconnectFromGoogleCalendar,
+  } = useGoogleCalendar();
 
   // Toggle timeline visibility
   const toggleTimeline = () => {
     setShowTimeline(!showTimeline);
+  };
+
+  // Handle Google Calendar connection
+  const handleGoogleCalendarConnect = async () => {
+    if (isAuthorized) {
+      disconnectFromGoogleCalendar();
+      toast({
+        title: "Disconnected",
+        description: "Successfully disconnected from Google Calendar",
+      });
+    } else {
+      try {
+        await connectToGoogleCalendar();
+        toast({
+          title: "Connected",
+          description: "Successfully connected to Google Calendar",
+        });
+      } catch (err) {
+        toast({
+          title: "Error",
+          description: "Failed to connect to Google Calendar",
+          variant: "destructive",
+        });
+      }
+    }
   };
 
   // Calculate padding classes based on sidebar states
@@ -139,13 +172,25 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
 
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
+            variant={isAuthorized ? "default" : "outline"}
             size="sm"
             className="flex items-center gap-1"
+            onClick={handleGoogleCalendarConnect}
+            disabled={isLoading}
           >
-            <Calendar className="h-4 w-4" />
-            <span>Connect Google Calendar</span>
-            <ExternalLink className="h-3 w-3 ml-1" />
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : isAuthorized ? (
+              <Check className="h-4 w-4" />
+            ) : (
+              <Calendar className="h-4 w-4" />
+            )}
+            <span>
+              {isAuthorized
+                ? "Google Calendar Connected"
+                : "Connect Google Calendar"}
+            </span>
+            {!isAuthorized && <ExternalLink className="h-3 w-3 ml-1" />}
           </Button>
 
           <Button

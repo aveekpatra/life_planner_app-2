@@ -16,6 +16,8 @@ import type {
 import type * as auth from "../auth.js";
 import type * as bookmarks from "../bookmarks.js";
 import type * as events from "../events.js";
+import type * as googleAuth from "../googleAuth.js";
+import type * as googleCalendarAuth from "../googleCalendarAuth.js";
 import type * as http from "../http.js";
 import type * as notes from "../notes.js";
 import type * as projects from "../projects.js";
@@ -33,6 +35,8 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   bookmarks: typeof bookmarks;
   events: typeof events;
+  googleAuth: typeof googleAuth;
+  googleCalendarAuth: typeof googleCalendarAuth;
   http: typeof http;
   notes: typeof notes;
   projects: typeof projects;

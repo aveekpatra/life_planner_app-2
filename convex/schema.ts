@@ -75,6 +75,16 @@ const applicationTables = {
     userId: v.id("users"),
     projectId: v.optional(v.id("projects")),
   }).index("by_user", ["userId"]),
+
+  googleCalendarAuth: defineTable({
+    userId: v.id("users"),
+    isAuthorized: v.boolean(),
+    accessToken: v.optional(v.string()),
+    tokenExpiry: v.optional(v.number()),
+    refreshToken: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
 };
 
 export default defineSchema({

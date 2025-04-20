@@ -1,0 +1,19 @@
+{
+    "root": true,
+    "ignorePatterns": [
+        "dist",
+        "node_modules",
+        ".env.d/**"
+    ],
+    "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/recommended"
+    ],
+    "parser": "@typescript-eslint/parser",
+    "plugins": [
+        "@typescript-eslint"
+    ],
+    "rules": {
+        // Add any custom rules here
+    }
+}
