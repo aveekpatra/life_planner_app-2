@@ -1,0 +1,37 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Google Calendar Integration
+
+The app features a comprehensive Google Calendar integration to display and manage events.
+
+## Key Files
+
+### Backend
+- [convex/googleCalendarAuth.ts](mdc:convex/googleCalendarAuth.ts) - Stores and manages auth tokens
+- [convex/schema.ts](mdc:convex/schema.ts) - Defines `googleCalendarAuth` table structure
+
+### Frontend
+- [src/hooks/useGoogleCalendar.ts](mdc:src/hooks/useGoogleCalendar.ts) - Custom hook managing auth and event fetching
+- [src/services/GoogleCalendarService.ts](mdc:src/services/GoogleCalendarService.ts) - Service for API interactions
+- [src/components/CalendarWidget.tsx](mdc:src/components/CalendarWidget.tsx) - Calendar UI with week/month views
+- [src/components/CalendarTimeline.tsx](mdc:src/components/CalendarTimeline.tsx) - Timeline visualization of events
+
+## Authentication Flow
+1. User authorizes with Google OAuth
+2. Tokens stored in both localStorage (temporary) and Convex (persistent)
+3. Refresh tokens used for silent re-authentication
+
+## Event Handling
+- Fetches events based on current view (week/month)
+- Caches events in localStorage for 10 minutes
+- Combines Google events with local events
+- Supports viewing both all-day and timed events
+
+## Optimizations
+- Event data is cached to reduce API calls
+- Auto-refreshes on view changes
+- Handles multiple calendars
+- Appropriate error handling for API limits

@@ -233,6 +233,12 @@ export class GoogleCalendarService {
           this.isAuthorized = true;
           console.log("Successfully authorized with Google, token received");
 
+          // Save refresh token if provided
+          if (response.refresh_token) {
+            console.log("Refresh token received, saving to localStorage");
+            localStorage.setItem("gapi_refresh_token", response.refresh_token);
+          }
+
           // Save auth state to localStorage immediately
           this.saveAuthState();
 
@@ -640,11 +646,21 @@ export class GoogleCalendarService {
         return;
       }
 
+      // Check if we have a refresh token in localStorage
+      const refreshToken = localStorage.getItem("gapi_refresh_token");
+      if (refreshToken) {
+        console.log(
+          "Found refresh token in localStorage, using it for silent refresh"
+        );
+      } else {
+        console.log("No refresh token found in localStorage");
+      }
+
       this.authPromiseResolve = resolve;
       this.authPromiseReject = reject;
 
       try {
-        // Request a new token
+        // Request a new token with silent prompt
         this.tokenClient!.requestAccessToken({
           prompt: "", // Skip UI if possible
         });

@@ -1,0 +1,52 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Data Model
+
+The application uses Convex for data storage with tables defined in [convex/schema.ts](mdc:convex/schema.ts).
+
+## Core Tables
+
+### Tasks
+- Table: `tasks`
+- Key fields: title, description, dueDate, completed, priority, status, userId, projectId
+- Indexed by: `by_user`
+- Files: [convex/tasks.ts](mdc:convex/tasks.ts) (queries and mutations)
+
+### Projects
+- Table: `projects`
+- Key fields: title, description, dueDate, status, priority, progress, userId
+- Indexed by: `by_user`
+- Files: [convex/projects.ts](mdc:convex/projects.ts) (queries and mutations)
+
+### Events
+- Table: `events`
+- Key fields: title, startDate, endDate, location, isAllDay, isRecurring, userId
+- Indexed by: `by_user`
+- Files: [convex/events.ts](mdc:convex/events.ts) (queries and mutations)
+
+### Notes
+- Table: `notes`
+- Key fields: title, content, category, tags, isPinned, userId
+- Indexed by: `by_user`, `by_pinned`
+- Files: [convex/notes.ts](mdc:convex/notes.ts) (queries and mutations)
+
+### Bookmarks
+- Table: `bookmarks`
+- Key fields: title, url, category, tags, userId
+- Indexed by: `by_user`
+- Files: [convex/bookmarks.ts](mdc:convex/bookmarks.ts) (queries and mutations)
+
+## External Integrations
+
+### Google Calendar
+- Table: `googleCalendarAuth`
+- Key fields: userId, isAuthorized, accessToken, refreshToken, tokenExpiry
+- Indexed by: `by_user`
+- Files: [convex/googleCalendarAuth.ts](mdc:convex/googleCalendarAuth.ts) (auth management)
+
+## Auth System
+- Uses `@convex-dev/auth` package
+- User data stored in `users` table

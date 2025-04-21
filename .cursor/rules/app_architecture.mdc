@@ -1,0 +1,35 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# App Architecture
+
+The Life Planner is organized as a React SPA with routing and Convex as the backend.
+
+## Main Structure
+- Entry point: [src/main.tsx](mdc:src/main.tsx) - Sets up routing and Convex provider
+- App shell: [src/App.tsx](mdc:src/App.tsx) - Contains router outlet
+- Home page: [src/pages/Home.tsx](mdc:src/pages/Home.tsx) - Dashboard with widgets
+
+## Key Components
+- [src/components/MainLayout.tsx](mdc:src/components/MainLayout.tsx) - Navigation and layout
+- [src/components/CalendarWidget.tsx](mdc:src/components/CalendarWidget.tsx) - Calendar integration
+- [src/components/TasksWidget.tsx](mdc:src/components/TasksWidget.tsx) - Task management
+- [src/components/ProjectsWidget.tsx](mdc:src/components/ProjectsWidget.tsx) - Project management
+- [src/components/NotesWidget.tsx](mdc:src/components/NotesWidget.tsx) - Notes management
+- [src/components/QuickCapture.tsx](mdc:src/components/QuickCapture.tsx) - Fast data entry
+
+## Authentication
+- [src/SignInForm.tsx](mdc:src/SignInForm.tsx) - User login/registration
+- [src/SignOutButton.tsx](mdc:src/SignOutButton.tsx) - Logout functionality
+- [convex/auth.ts](mdc:convex/auth.ts) - Backend auth configuration
+
+## Routing Structure
+Routes are defined in [src/main.tsx](mdc:src/main.tsx) with the following paths:
+- `/` - Home dashboard
+- `/tasks` - Task management
+- `/projects` - Project management
+- `/notes` - Notes management
+- `/calendar` - Calendar view
+- `/bookmarks` - Bookmark management

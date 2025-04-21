@@ -120,6 +120,100 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
     setError(null);
 
     try {
+      // Check if we have a refresh token stored in Convex but not in localStorage
+      if (authStatus?.refreshToken) {
+        console.log("Found existing refresh token in Convex database");
+
+        // Set it in localStorage for the Google service to use
+        if (authStatus.refreshToken.length > 0) {
+          console.log(
+            "Setting refresh token from Convex to localStorage for immediate reconnection"
+          );
+          localStorage.setItem("gapi_refresh_token", authStatus.refreshToken);
+
+          // Try to force a token refresh immediately using silent mode
+          try {
+            await googleCalendarService.refreshToken();
+            console.log(
+              "Silent refresh token succeeded using Convex refresh token"
+            );
+
+            // If refresh succeeded, update the auth state right away
+            const tokenInfo = googleCalendarService.getTokenInfo();
+            if (tokenInfo) {
+              await saveAuthData({
+                isAuthorized: true,
+                accessToken: tokenInfo.accessToken,
+                tokenExpiry: tokenInfo.expiryTime,
+                refreshToken: tokenInfo.refreshToken || authStatus.refreshToken, // Keep original if no new one
+              });
+              setIsAuthorized(true);
+              console.log("Updated auth data in Convex after silent refresh");
+              setIsLoading(false);
+
+              // Load events immediately after successful authentication
+              try {
+                const now = new Date();
+                const startDate = new Date(
+                  now.getFullYear(),
+                  now.getMonth(),
+                  1
+                );
+                const endDate = new Date(
+                  now.getFullYear(),
+                  now.getMonth() + 1,
+                  0
+                );
+
+                console.log(
+                  "Loading initial events after successful authentication"
+                );
+
+                // We need to use a local function here to avoid circular dependency issues
+                // This will be replaced with the proper fetchAllCalendarEvents call once it's defined
+                const loadInitialEvents = async () => {
+                  try {
+                    // First fetch calendar list
+                    const calendarList =
+                      await googleCalendarService.listCalendars();
+                    setCalendars(calendarList);
+
+                    // Then fetch events from the primary calendar as a fallback
+                    const response = await googleCalendarService.listEvents(
+                      "primary",
+                      startDate.toISOString(),
+                      endDate.toISOString(),
+                      250
+                    );
+
+                    if (response && response.items) {
+                      setEvents(response.items);
+                      console.log(
+                        `Loaded ${response.items.length} initial events`
+                      );
+                    }
+                  } catch (error) {
+                    console.error("Error loading initial events:", error);
+                  }
+                };
+
+                // Start loading events in the background
+                loadInitialEvents();
+              } catch (err) {
+                console.error("Failed to load initial events:", err);
+              }
+              return;
+            }
+          } catch (refreshErr) {
+            console.warn(
+              "Silent refresh failed, will try standard authorization flow",
+              refreshErr
+            );
+            // Continue with normal flow if silent refresh fails
+          }
+        }
+      }
+
       // First try to refresh the token if we have one
       const existingToken =
         authStatus?.isAuthorized &&
@@ -160,6 +254,45 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
       }
 
       setIsAuthorized(true);
+
+      // Load events immediately after successful authentication
+      try {
+        const now = new Date();
+        const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+        console.log("Loading initial events after successful authentication");
+
+        // We need to use a local function here to avoid circular dependency issues
+        // This will be replaced with the proper fetchAllCalendarEvents call once it's defined
+        const loadInitialEvents = async () => {
+          try {
+            // First fetch calendar list
+            const calendarList = await googleCalendarService.listCalendars();
+            setCalendars(calendarList);
+
+            // Then fetch events from the primary calendar as a fallback
+            const response = await googleCalendarService.listEvents(
+              "primary",
+              startDate.toISOString(),
+              endDate.toISOString(),
+              250
+            );
+
+            if (response && response.items) {
+              setEvents(response.items);
+              console.log(`Loaded ${response.items.length} initial events`);
+            }
+          } catch (error) {
+            console.error("Error loading initial events:", error);
+          }
+        };
+
+        // Start loading events in the background
+        loadInitialEvents();
+      } catch (err) {
+        console.error("Failed to load initial events:", err);
+      }
     } catch (err) {
       console.error("Authorization failed:", err);
       setError(
@@ -358,6 +491,65 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
     connectToGoogleCalendar,
     isAuthorized,
   ]);
+
+  // Special effect specifically to handle auth status changes from Convex
+  // This ensures immediate reconnection when logging in from a new device
+  useEffect(() => {
+    // Only run if we have both API loaded and auth status from Convex
+    if (!apiLoaded || authStatus === undefined) return;
+
+    const convexAuthStatus = authStatus?.isAuthorized || false;
+    const convexHasRefreshToken = !!(
+      authStatus?.refreshToken && authStatus.refreshToken.length > 0
+    );
+    const googleAuthStatus = googleCalendarService.getIsAuthorized();
+
+    console.log(
+      "Auth status changed - Google:",
+      googleAuthStatus,
+      "Convex:",
+      convexAuthStatus,
+      "Has refresh token:",
+      convexHasRefreshToken
+    );
+
+    // Automatically connect if we have Convex auth but not Google auth
+    if (convexAuthStatus && !googleAuthStatus && convexHasRefreshToken) {
+      console.log("Auto-connecting to Google Calendar after login");
+
+      // Don't wait for the scheduled check, connect immediately
+      (async () => {
+        try {
+          await connectToGoogleCalendar();
+          console.log("Auto-connection successful");
+
+          // Immediately fetch events for the current date after successful authentication
+          const today = new Date();
+          const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+          const endDate = new Date(
+            today.getFullYear(),
+            today.getMonth() + 1,
+            0
+          );
+
+          console.log("Auto-loading events after successful authentication");
+          try {
+            // Load events for current month to populate calendar views
+            await fetchAllCalendarEvents(
+              startDate.toISOString(),
+              endDate.toISOString(),
+              250
+            );
+            console.log("Initial events loaded automatically after login");
+          } catch (eventsErr) {
+            console.error("Failed to auto-load events:", eventsErr);
+          }
+        } catch (err) {
+          console.error("Auto-connection failed:", err);
+        }
+      })();
+    }
+  }, [apiLoaded, authStatus, connectToGoogleCalendar]);
 
   // Fetch calendars when authorized
   useEffect(() => {

@@ -70,6 +70,7 @@ export const getAuthStatus = query({
     return {
       isAuthorized: authData.isAuthorized,
       tokenExpiry: authData.tokenExpiry,
+      refreshToken: authData.refreshToken || "",
     };
   },
 });

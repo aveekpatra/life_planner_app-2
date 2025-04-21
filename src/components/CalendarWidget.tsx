@@ -155,7 +155,7 @@ export function CalendarWidget() {
     `CalendarWidget initialized with year: ${currentYear}, month: ${currentMonth}`
   );
 
-  const [view, setView] = useState<CalendarView>("month");
+  const [view, setView] = useState<CalendarView>("week");
   const [mergedEvents, setMergedEvents] = useState<CalendarEventBase[]>([]);
   const [showGoogleEvents, setShowGoogleEvents] = useState(true);
   const eventsInitialized = useRef(false);
@@ -236,6 +236,31 @@ export function CalendarWidget() {
     }
   }, [view, currentYear, currentMonth, currentDate]);
 
+  // Initial events load when authorized
+  useEffect(() => {
+    if (isAuthorized && !eventsInitialized.current && !isLoading) {
+      eventsInitialized.current = true;
+      console.log("Initial load of Google Calendar events");
+
+      const startOfMonth = new Date(currentYear, currentMonth, 1);
+      const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
+
+      console.log(
+        `[Initial Load] Fetching for: ${startOfMonth.toISOString()} to ${endOfMonth.toISOString()}`
+      );
+
+      // Clear any previous fetch key to force a refresh
+      lastFetchedMonth.current = "";
+
+      // Use void to ignore the Promise - only use required parameters
+      void refreshEvents(
+        "primary",
+        startOfMonth.toISOString(),
+        endOfMonth.toISOString()
+      );
+    }
+  }, [isAuthorized, isLoading, refreshEvents, currentYear, currentMonth]);
+
   // Fetch Google Calendar events when authorized or when date range changes
   useEffect(() => {
     if (isAuthorized) {
@@ -281,11 +306,11 @@ export function CalendarWidget() {
           `[Date Range Change] Fetching for: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`
         );
 
-        // Use void to ignore the Promise
+        // Use void to ignore the Promise - only use required parameters
         void refreshEvents(
+          "primary",
           startDate.toISOString(),
-          endDate.toISOString(),
-          "250" // Increase max results to ensure we get all events
+          endDate.toISOString()
         );
       }
     }
@@ -298,28 +323,6 @@ export function CalendarWidget() {
     currentMonth,
     currentDate,
   ]);
-
-  // Initial events load when authorized
-  useEffect(() => {
-    if (isAuthorized && !eventsInitialized.current && !isLoading) {
-      eventsInitialized.current = true;
-      console.log("Initial load of Google Calendar events");
-
-      const startOfMonth = new Date(currentYear, currentMonth, 1);
-      const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
-
-      console.log(
-        `[Initial Load] Fetching for: ${startOfMonth.toISOString()} to ${endOfMonth.toISOString()}`
-      );
-
-      // Use void to ignore the Promise
-      void refreshEvents(
-        "primary",
-        startOfMonth.toISOString(),
-        endOfMonth.toISOString()
-      );
-    }
-  }, [isAuthorized, isLoading, refreshEvents, currentYear, currentMonth]);
 
   // Navigate to previous/next month or week
   const goToPrevious = () => {
@@ -532,12 +535,11 @@ export function CalendarWidget() {
         "Manually refreshing Google Calendar events from all calendars"
       );
 
-      // Use void to ignore the Promise
+      // Use void to ignore the Promise - only use required parameters
       void refreshEvents(
+        "primary",
         startDate.toISOString(),
-        endDate.toISOString(),
-        "250", // Increased max results
-        "true" // Force refresh, bypassing cache
+        endDate.toISOString()
       );
     } else {
       console.log("Cannot refresh - not authorized with Google Calendar");

@@ -1,7 +1,5 @@
 import { ChevronRight, ChevronLeft, X, RefreshCw } from "lucide-react";
-import { useState, useEffect } from "react";
-import { useQuery } from "convex/react";
-import { api } from "../../convex/_generated/api";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useGoogleCalendar } from "../hooks/useGoogleCalendar";
 import { GoogleCalendarEvent } from "../services/GoogleCalendarService";
 import { Badge } from "./ui/badge";
@@ -18,10 +16,10 @@ type Event = {
   category?: string;
   isAllDay: boolean;
   color?: string;
-  source?: "local" | "google";
+  source?: "google";
 };
 
-// Date utility functions to replace date-fns
+// Date utility functions
 const formatDate = (date: Date): string => {
   const days = [
     "Sunday",
@@ -89,6 +87,10 @@ const convertGoogleEvent = (event: GoogleCalendarEvent): Event => {
   const startDateTime = event.start.dateTime || event.start.date || "";
   const endDateTime = event.end.dateTime || event.end.date || "";
 
+  console.log(
+    `Converting event: ${event.summary}, start: ${startDateTime}, end: ${endDateTime}`
+  );
+
   // Generate a color based on event summary if no color provided
   const defaultColor =
     "#" +
@@ -101,6 +103,29 @@ const convertGoogleEvent = (event: GoogleCalendarEvent): Event => {
       .toString(16)
       .padStart(6, "0");
 
+  // Use the color from the event if available, otherwise use the generated one
+  // First try to use the calendar-specific color if available from our calendar info extension
+  let color = (event as any).calendarColor || defaultColor;
+
+  // Then check if the event has a colorId
+  if (event.colorId) {
+    // Google Calendar color IDs are 1-11
+    const colorMap: Record<string, string> = {
+      "1": "#7986cb", // Lavender
+      "2": "#33b679", // Sage
+      "3": "#8e24aa", // Grape
+      "4": "#e67c73", // Flamingo
+      "5": "#f6bf26", // Banana
+      "6": "#f4511e", // Tangerine
+      "7": "#039be5", // Peacock
+      "8": "#616161", // Graphite
+      "9": "#3f51b5", // Blueberry
+      "10": "#0b8043", // Basil
+      "11": "#d60000", // Tomato
+    };
+    color = colorMap[event.colorId] || color;
+  }
+
   return {
     _id: event.id,
     title: event.summary,
@@ -109,110 +134,135 @@ const convertGoogleEvent = (event: GoogleCalendarEvent): Event => {
     endDate: new Date(endDateTime).getTime(),
     location: event.location || "",
     isAllDay: !event.start.dateTime,
-    color: event.colorId ? `#${event.colorId}` : defaultColor,
+    color: color,
     source: "google",
   };
 };
 
 export function CalendarTimeline({ onClose }: { onClose: () => void }) {
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [mergedEvents, setMergedEvents] = useState<Event[]>([]);
-  const [showGoogleEvents, setShowGoogleEvents] = useState(true);
-  const localEvents = useQuery(api.events.list) || [];
+  // Get the real current date without modification
+  const realToday = new Date();
+  console.log(`Real system date: ${realToday.toISOString()}`);
+
+  // Use the actual system date without forcing it to 2024
+  // We previously thought the date was incorrect, but the system date is actually 2025
+  const today = new Date();
+  console.log(`Using system date as-is: ${today.toISOString()}`);
+
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(true);
+  const eventsInitialized = useRef(false);
+  const [error, setError] = useState<Error | null>(null);
 
   const {
-    isLoading,
-    error,
+    isLoading: isLoadingGoogle,
     events: googleEvents,
     isAuthorized,
     refreshEvents,
   } = useGoogleCalendar();
 
   // Navigate to previous/next day
-  const goToPreviousDay = () => {
+  const goToPrevious = () => {
     setSelectedDate((prev) => subDays(prev, 1));
   };
 
-  const goToNextDay = () => {
+  const goToNext = () => {
     setSelectedDate((prev) => addDays(prev, 1));
   };
 
-  // Merge local and Google Calendar events
+  // Convert Google Calendar events to our format
   useEffect(() => {
-    let allEvents: Event[] = [...localEvents];
+    // console.log("Raw googleEvents received in Timeline:", googleEvents);
+    if (googleEvents && googleEvents.length > 0) {
+      try {
+        // console.log(
+        //   `Timeline: Processing ${googleEvents.length} Google Calendar events`
+        // );
+        const convertedEvents = googleEvents.map(convertGoogleEvent);
+        // console.log("Timeline: Converted events:", convertedEvents);
+        setEvents(convertedEvents);
+      } catch (error) {
+        console.error("Error converting Google events:", error);
+        setEvents([]); // Clear events on conversion error
+      }
+    } else {
+      // console.log("Timeline: No Google events to process or googleEvents is null/empty.");
+      setEvents([]);
+    }
+    // Use isLoadingGoogle from the hook directly for loading state
+    setIsLoadingEvents(isLoadingGoogle);
+  }, [googleEvents, isLoadingGoogle]);
 
-    if (isAuthorized && showGoogleEvents && googleEvents.length > 0) {
-      const convertedGoogleEvents = googleEvents.map(convertGoogleEvent);
-      allEvents = [...allEvents, ...convertedGoogleEvents];
+  // Fetch Google Calendar events when the selected date changes or auth status changes
+  useEffect(() => {
+    // Don't fetch if not authorized
+    if (!isAuthorized) {
+      // console.log("Timeline: Skipping fetch, not authorized.");
+      setEvents([]); // Clear events if not authorized
+      setIsLoadingEvents(false);
+      return;
     }
 
-    setMergedEvents(allEvents);
-  }, [localEvents, googleEvents, isAuthorized, showGoogleEvents]);
+    // Set loading state immediately
+    setIsLoadingEvents(true);
+    const periodStart = startOfDay(selectedDate);
+    const periodEnd = endOfDay(selectedDate);
 
-  // Fetch Google Calendar events when the selected date changes
-  useEffect(() => {
-    if (isAuthorized) {
-      const dayStart = startOfDay(selectedDate);
-      const dayEnd = endOfDay(selectedDate);
+    // console.log(
+    //   `Timeline: Fetching events for date range: ${periodStart.toISOString()} to ${periodEnd.toISOString()}`
+    // );
 
-      console.log(
-        `Fetching Google Calendar events for: ${dayStart.toISOString()} to ${dayEnd.toISOString()}`
-      );
-
-      // Use void to ignore the Promise
-      void refreshEvents(
-        "primary",
-        dayStart.toISOString(),
-        dayEnd.toISOString()
-      );
-    }
+    // Fetch all calendars for the given day
+    refreshEvents(
+      periodStart.toISOString(), // timeMin
+      periodEnd.toISOString(), // timeMax
+      250, // maxResults
+      true // forceRefresh (consider making this false initially unless needed)
+    )
+      .then(() => {
+        // console.log("Timeline: Event fetch promise resolved.");
+        // Loading state is handled by the googleEvents effect
+      })
+      .catch((err) => {
+        console.error("Timeline: Error fetching events:", err);
+        setError(
+          err instanceof Error ? err : new Error("Failed to fetch events")
+        );
+        setEvents([]); // Clear events on fetch error
+        setIsLoadingEvents(false); // Ensure loading stops on error
+      });
   }, [isAuthorized, refreshEvents, selectedDate]);
 
-  // Toggle Google Calendar events visibility
-  const toggleGoogleEvents = () => {
-    setShowGoogleEvents(!showGoogleEvents);
-  };
-
-  // Handle manual refresh of Google Calendar events
-  const handleRefreshGoogleEvents = () => {
-    if (isAuthorized) {
+  // Filter events for the selected day
+  const filteredEvents = useMemo(() => {
+    // console.log(`Timeline: Filtering ${events.length} events for date ${selectedDate.toLocaleDateString()}`);
+    return events.filter((event) => {
+      const eventStart = new Date(event.startDate);
+      const eventEnd = new Date(event.endDate);
       const dayStart = startOfDay(selectedDate);
       const dayEnd = endOfDay(selectedDate);
+      const eventStartTime = eventStart.getTime();
+      const eventEndTime = eventEnd.getTime();
+      const dayStartTime = dayStart.getTime();
+      const dayEndTime = dayEnd.getTime();
 
-      console.log(
-        `Manually refreshing Google Calendar events for: ${dayStart.toISOString()} to ${dayEnd.toISOString()}`
-      );
+      const isInRange =
+        (eventStartTime >= dayStartTime && eventStartTime <= dayEndTime) ||
+        (eventEndTime >= dayStartTime && eventEndTime <= dayEndTime) ||
+        (eventStartTime <= dayStartTime && eventEndTime >= dayEndTime);
 
-      // Use void to ignore the Promise
-      void refreshEvents(
-        "primary",
-        dayStart.toISOString(),
-        dayEnd.toISOString(),
-        100,
-        true // Force refresh, bypassing cache
-      );
-    }
-  };
-
-  // Filter events for the selected day
-  const dayEvents = mergedEvents.filter((event) => {
-    // Convert database timestamp (milliseconds) to Date object
-    const eventStart = new Date(event.startDate);
-    const eventEnd = new Date(event.endDate);
-
-    const dayStart = startOfDay(selectedDate);
-    const dayEnd = endOfDay(selectedDate);
-
-    // Check if event falls within the selected day
-    return (
-      (eventStart >= dayStart && eventStart <= dayEnd) || // Event starts on the selected day
-      (eventEnd >= dayStart && eventEnd <= dayEnd) || // Event ends on the selected day
-      (eventStart <= dayStart && eventEnd >= dayEnd) // Event spans over the selected day
-    );
-  });
+      // if (isInRange) {
+      //   console.log(`Event in range: ${event.title}, start: ${eventStart.toLocaleString()}, end: ${eventEnd.toLocaleString()}`);
+      // }
+      return isInRange;
+    });
+  }, [events, selectedDate]);
 
   // Sort events by start time
-  const sortedEvents = [...dayEvents].sort((a, b) => a.startDate - b.startDate);
+  const sortedEvents = useMemo(() => {
+    return [...filteredEvents].sort((a, b) => a.startDate - b.startDate);
+  }, [filteredEvents]);
 
   // Generate time blocks for the day (hourly from 7am to 10pm)
   const timeBlocks = Array.from({ length: 16 }, (_, i) => {
@@ -250,11 +300,19 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
     return event.color || "#3b82f6"; // Default to blue if no color specified
   };
 
+  // Loading state component
+  const LoadingEvents = () => (
+    <div className="flex flex-col items-center justify-center h-32 gap-2">
+      <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full"></div>
+      <p className="text-sm text-muted-foreground">Loading events...</p>
+    </div>
+  );
+
   return (
     <div className="w-96 border-l border-border h-full bg-background flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between border-b p-4">
-        <h3 className="text-lg font-medium">Schedule</h3>
+        <h3 className="text-lg font-medium">Today's Schedule</h3>
         <button
           onClick={onClose}
           className="text-muted-foreground hover:text-foreground transition-colors"
@@ -264,10 +322,15 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
+      {/* System date notice */}
+      <div className="px-4 py-2 bg-muted/20 text-xs text-muted-foreground">
+        Note: Using system date in 2025
+      </div>
+
       {/* Date navigation */}
       <div className="flex items-center justify-between border-b p-4">
         <button
-          onClick={goToPreviousDay}
+          onClick={goToPrevious}
           className="inline-flex items-center justify-center p-1 text-muted-foreground hover:text-foreground"
           aria-label="Previous day"
         >
@@ -275,7 +338,7 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
         </button>
         <h4 className="text-sm font-medium">{formatDate(selectedDate)}</h4>
         <button
-          onClick={goToNextDay}
+          onClick={goToNext}
           className="inline-flex items-center justify-center p-1 text-muted-foreground hover:text-foreground"
           aria-label="Next day"
         >
@@ -286,25 +349,32 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
       {/* Google Calendar controls */}
       {isAuthorized && (
         <div className="px-4 py-2 border-b flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <Badge
-              variant={showGoogleEvents ? "default" : "outline"}
-              className="cursor-pointer"
-              onClick={toggleGoogleEvents}
-            >
-              Google Calendar
-            </Badge>
-            <Badge variant="secondary">Local Events</Badge>
-          </div>
+          <Badge variant="default">Google Calendar</Badge>
           <Button
             variant="ghost"
             size="sm"
-            onClick={handleRefreshGoogleEvents}
-            disabled={isLoading}
+            onClick={() => {
+              setIsLoadingEvents(true);
+              const periodStart = startOfDay(selectedDate);
+              const periodEnd = endOfDay(selectedDate);
+              console.log(
+                `Manual refresh for: ${periodStart.toISOString()} to ${periodEnd.toISOString()}`
+              );
+              console.log(
+                "Manually refreshing Google Calendar events from all calendars"
+              );
+              refreshEvents(
+                periodStart.toISOString(), // timeMin
+                periodEnd.toISOString(), // timeMax
+                250, // maxResults as number - increased from 100 to match CalendarWidget
+                true // forceRefresh as boolean
+              );
+            }}
+            disabled={isLoadingEvents}
             className="flex items-center gap-1"
           >
             <RefreshCw
-              className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`}
+              className={`h-3 w-3 ${isLoadingEvents ? "animate-spin" : ""}`}
             />
             <span className="text-xs">Refresh</span>
           </Button>
@@ -317,71 +387,13 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* Timeline */}
+      {/* Timeline Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        <div className="relative">
-          {/* Time blocks */}
-          {timeBlocks.map((block) => (
-            <div
-              key={block.time}
-              className="flex items-start border-t border-border py-2 h-[60px] relative"
-            >
-              <div className="text-xs text-muted-foreground w-16 -mt-2 sticky left-0">
-                {block.displayTime}
-              </div>
-              <div className="flex-1 ml-2"></div>
-            </div>
-          ))}
-
-          {/* Events */}
-          <div className="absolute inset-0 pointer-events-none">
-            {sortedEvents.map((event) => {
-              // Skip all-day events for timeline view or events that start before our timeline begins
-              if (event.isAllDay) return null;
-
-              const eventTop = getEventPosition(event.startDate);
-              const eventHeight = getEventHeight(
-                event.startDate,
-                event.endDate
-              );
-              const eventColor = getEventColor(event);
-
-              return (
-                <div
-                  key={event._id}
-                  className="absolute left-16 right-0 rounded overflow-hidden shadow-sm pointer-events-auto"
-                  style={{
-                    top: `${eventTop}px`,
-                    height: `${eventHeight}px`,
-                    backgroundColor: `${eventColor}20`,
-                    borderLeft: `3px solid ${eventColor}`,
-                  }}
-                >
-                  <div className="p-2">
-                    <div
-                      className="font-medium text-xs truncate flex items-center gap-1"
-                      style={{ color: eventColor }}
-                    >
-                      {event.source === "google" && (
-                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                      )}
-                      {event.title}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {formatTime(new Date(event.startDate))} -{" "}
-                      {formatTime(new Date(event.endDate))}
-                    </div>
-                    {event.location && (
-                      <div className="text-xs text-muted-foreground truncate mt-1">
-                        📍 {event.location}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+        {!isAuthorized && (
+          <div className="mb-4 p-3 bg-muted/50 rounded-md border text-sm">
+            Please connect your Google Calendar to see events.
           </div>
-        </div>
+        )}
 
         {/* All-day events at the top */}
         {sortedEvents.some((e) => e.isAllDay) && (
@@ -405,9 +417,7 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
                       className="font-medium text-xs flex items-center gap-1"
                       style={{ color: getEventColor(event) }}
                     >
-                      {event.source === "google" && (
-                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                      )}
+                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                       {event.title}
                     </div>
                     {event.location && (
@@ -421,7 +431,85 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {sortedEvents.length === 0 && (
+        {/* Show a message when we've tried to load but got no events */}
+        {googleEvents?.length === 0 && !isLoadingEvents && isAuthorized && (
+          <div className="px-4 py-2 bg-yellow-100/50 text-yellow-800 text-sm rounded-md mb-4">
+            No events found for {selectedDate.toLocaleDateString()} in Google
+            Calendar.
+            <br />
+            <span className="text-xs">
+              Try changing the date or refreshing.
+            </span>
+          </div>
+        )}
+
+        {isLoadingEvents ? (
+          <LoadingEvents />
+        ) : (
+          <div className="relative">
+            {/* Time blocks */}
+            {timeBlocks.map((block) => (
+              <div
+                key={block.time}
+                className="flex items-start border-t border-border py-2 h-[60px] relative"
+              >
+                <div className="text-xs text-muted-foreground w-16 -mt-2 sticky left-0">
+                  {block.displayTime}
+                </div>
+                <div className="flex-1 ml-2"></div>
+              </div>
+            ))}
+
+            {/* Events */}
+            <div className="absolute inset-0 pointer-events-none">
+              {sortedEvents.map((event) => {
+                // Skip all-day events for timeline view as they are shown separately above
+                if (event.isAllDay) return null;
+
+                const eventTop = getEventPosition(event.startDate);
+                const eventHeight = getEventHeight(
+                  event.startDate,
+                  event.endDate
+                );
+                const eventColor = getEventColor(event);
+
+                return (
+                  <div
+                    key={event._id}
+                    className="absolute left-16 right-0 rounded overflow-hidden shadow-sm pointer-events-auto"
+                    style={{
+                      top: `${eventTop}px`,
+                      height: `${eventHeight}px`,
+                      backgroundColor: `${eventColor}20`,
+                      borderLeft: `3px solid ${eventColor}`,
+                    }}
+                  >
+                    <div className="p-2">
+                      <div
+                        className="font-medium text-xs truncate flex items-center gap-1"
+                        style={{ color: eventColor }}
+                      >
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                        {event.title}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatTime(new Date(event.startDate))} -{" "}
+                        {formatTime(new Date(event.endDate))}
+                      </div>
+                      {event.location && (
+                        <div className="text-xs text-muted-foreground truncate mt-1">
+                          📍 {event.location}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {sortedEvents.length === 0 && !isLoadingEvents && isAuthorized && (
           <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
             No events scheduled for this day
           </div>

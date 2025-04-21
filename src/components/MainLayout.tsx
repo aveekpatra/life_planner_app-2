@@ -28,6 +28,10 @@ import {
   ExternalLink,
   Check,
   Loader2,
+  Inbox,
+  LogOut,
+  ChevronUp,
+  MoreVertical,
 } from "lucide-react";
 import { SignOutButton } from "../SignOutButton";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -39,6 +43,15 @@ import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
 import { useGoogleCalendar } from "../hooks/useGoogleCalendar";
 import { useToast } from "../hooks/use-toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
+import { useConvexAuth, useAction } from "convex/react";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -72,28 +85,75 @@ function CollapsibleFooter() {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
   const user = useQuery(api.auth.loggedInUser);
+  const signOut = useAction(api.auth.signOut);
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    window.location.reload();
+  };
+
+  const handleProfileClick = () => {
+    // Navigate to profile page or open profile modal
+    console.log("Profile clicked");
+  };
+
+  const handleSettingsClick = () => {
+    // Navigate to settings page or open settings modal
+    console.log("Settings clicked");
+  };
 
   return (
     <SidebarFooter className="p-4">
-      <div className="flex items-center justify-between">
-        <div
-          className={cn(
-            "flex items-center gap-2",
-            isCollapsed ? "w-0 overflow-hidden" : "w-auto"
-          )}
-        >
-          <Avatar className="h-8 w-8 shrink-0">
-            <AvatarImage src={user?.image} />
-            <AvatarFallback>{user?.name?.[0] || "U"}</AvatarFallback>
-          </Avatar>
-          <div
-            className="text-sm font-medium truncate transition-opacity duration-200"
-            style={{ opacity: isCollapsed ? 0 : 1 }}
-          >
-            {user?.name || "User"}
-          </div>
-        </div>
-        <SignOutButton />
+      <div className="flex items-center justify-center w-full">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <div className="flex items-center gap-2 cursor-pointer p-2 rounded-md hover:bg-muted w-full justify-center">
+              <Avatar className="h-8 w-8 shrink-0">
+                <AvatarImage src={user?.image} />
+                <AvatarFallback>{user?.name?.[0] || "U"}</AvatarFallback>
+              </Avatar>
+
+              <div
+                className={cn(
+                  "text-sm font-medium truncate transition-opacity duration-200",
+                  isCollapsed ? "hidden" : "block"
+                )}
+              >
+                {user?.name || "User"}
+              </div>
+
+              <MoreVertical
+                className={cn(
+                  "h-4 w-4 text-muted-foreground",
+                  isCollapsed ? "hidden" : "block"
+                )}
+              />
+            </div>
+          </DropdownMenuTrigger>
+
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel>My Account</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem onClick={handleProfileClick}>
+              <User className="mr-2 h-4 w-4" />
+              <span>Profile</span>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem onClick={handleSettingsClick}>
+              <Settings className="mr-2 h-4 w-4" />
+              <span>Settings</span>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem onClick={() => void handleSignOut()}>
+              <LogOut className="mr-2 h-4 w-4" />
+              <span>Log out</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </SidebarFooter>
   );
@@ -103,7 +163,18 @@ function CollapsibleFooter() {
 function ResponsiveContent({ children }: { children: React.ReactNode }) {
   const { state } = useSidebar();
   const isLeftSidebarCollapsed = state === "collapsed";
-  const [showTimeline, setShowTimeline] = React.useState(false);
+
+  // Load initial timeline state from localStorage or default to true (visible)
+  const [showTimeline, setShowTimeline] = React.useState(() => {
+    try {
+      const savedState = localStorage.getItem("timeline_visible");
+      return savedState === null ? true : savedState === "true";
+    } catch (error) {
+      console.error("Error loading timeline state:", error);
+      return true; // Default to visible if there's an error
+    }
+  });
+
   const { toast } = useToast();
   const {
     isLoading,
@@ -113,9 +184,15 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
     disconnectFromGoogleCalendar,
   } = useGoogleCalendar();
 
-  // Toggle timeline visibility
+  // Toggle timeline visibility and save state
   const toggleTimeline = () => {
-    setShowTimeline(!showTimeline);
+    const newState = !showTimeline;
+    setShowTimeline(newState);
+    try {
+      localStorage.setItem("timeline_visible", String(newState));
+    } catch (error) {
+      console.error("Error saving timeline state:", error);
+    }
   };
 
   // Handle Google Calendar connection
@@ -229,6 +306,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const [activeItem, setActiveItem] = React.useState(() => {
     // Set active item based on current route
     const path = location.pathname;
+    if (path === "/") return "inbox";
     if (path.includes("/tasks")) return "tasks";
     if (path.includes("/projects")) return "projects";
     if (path.includes("/calendar")) return "calendar";
@@ -239,6 +317,12 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   // Navigation items for the sidebar
   const navItems = [
+    {
+      id: "inbox",
+      label: "Inbox",
+      icon: <Inbox className="h-4 w-4" />,
+      path: "/",
+    },
     {
       id: "tasks",
       label: "Tasks",
@@ -277,7 +361,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   };
 
   return (
-    <SidebarProvider defaultOpen={false}>
+    <SidebarProvider>
       <div className="flex min-h-screen w-full">
         {/* Sidebar */}
         <Sidebar variant="sidebar" collapsible="icon">
@@ -293,30 +377,17 @@ export function MainLayout({ children }: MainLayoutProps) {
                       isActive={activeItem === item.id}
                       onClick={() => handleNavigation(item)}
                       tooltip={item.label}
+                      className="rounded-md flex justify-center items-center py-3"
                     >
-                      {item.icon}
-                      <span>{item.label}</span>
+                      <div className="flex items-center justify-center w-5">
+                        {React.cloneElement(item.icon, {
+                          className: "h-5 w-5",
+                        })}
+                      </div>
+                      <span className="ml-3 text-base">{item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
-              </SidebarMenu>
-            </SidebarGroup>
-
-            <SidebarGroup>
-              <SidebarGroupLabel>Settings</SidebarGroupLabel>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Preferences">
-                    <Settings className="h-4 w-4" />
-                    <span>Preferences</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Profile">
-                    <User className="h-4 w-4" />
-                    <span>Profile</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroup>
           </SidebarContent>
