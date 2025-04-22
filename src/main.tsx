@@ -1,8 +1,13 @@
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import {
+  createBrowserRouter,
+  RouterProvider,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { verifyRequiredEnv } from "./utils/environment";
 import "./index.css";
 import App from "./App";
@@ -12,6 +17,7 @@ import ProjectsPage from "./pages/ProjectsPage";
 import NotesPage from "./pages/NotesPage";
 import CalendarPage from "./pages/CalendarPage";
 import BookmarksPage from "./pages/BookmarksPage";
+import { GoogleAuthCallback } from "./components/GoogleAuthCallback";
 
 // Verify required environment variables
 const envVarsConfigured = verifyRequiredEnv([
@@ -28,11 +34,37 @@ if (!envVarsConfigured) {
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
+// Wrapper component for handling authentication state from location
+function AppWithAuthStateHandling() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Check if we have auth state in the location
+    if (location.state?.authCode) {
+      const { authCode } = location.state;
+      console.log("Found auth code in location state, handling authentication");
+
+      // Clear the auth code from location state to prevent reprocessing
+      navigate(location.pathname, { replace: true, state: {} });
+
+      // Dispatch a custom event that the GoogleCalendarService can listen for
+      window.dispatchEvent(
+        new CustomEvent("GOOGLE_AUTH_DIRECT", {
+          detail: { code: authCode },
+        })
+      );
+    }
+  }, [location, navigate]);
+
+  return <App />;
+}
+
 // Define routes
 const router = createBrowserRouter([
   {
     path: "/",
-    element: <App />,
+    element: <AppWithAuthStateHandling />,
     children: [
       {
         index: true,
@@ -59,6 +91,11 @@ const router = createBrowserRouter([
         element: <BookmarksPage />,
       },
     ],
+  },
+  // Add a separate route for Google Auth callback
+  {
+    path: "/auth/google/callback",
+    element: <GoogleAuthCallback />,
   },
 ]);
 

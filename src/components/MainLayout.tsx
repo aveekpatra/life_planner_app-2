@@ -70,7 +70,7 @@ function CollapsibleHeader() {
           "flex-1 transition-opacity duration-200 cursor-pointer",
           isCollapsed ? "opacity-0" : "opacity-100"
         )}
-        onClick={() => navigate("/")}
+        onClick={() => void navigate("/")}
       >
         <h1 className="text-lg font-medium tracking-tight whitespace-nowrap">
           Life Planner
@@ -88,19 +88,21 @@ function CollapsibleFooter() {
   const signOut = useAction(api.auth.signOut);
   const navigate = useNavigate();
 
-  const handleSignOut = async () => {
-    await signOut();
-    window.location.reload();
+  const handleSignOut = () => {
+    void (async () => {
+      await signOut();
+      window.location.reload();
+    })();
   };
 
   const handleProfileClick = () => {
     // Navigate to profile page or open profile modal
-    console.log("Profile clicked");
+    // console.log("Profile clicked");
   };
 
   const handleSettingsClick = () => {
     // Navigate to settings page or open settings modal
-    console.log("Settings clicked");
+    // console.log("Settings clicked");
   };
 
   return (
@@ -148,7 +150,11 @@ function CollapsibleFooter() {
 
             <DropdownMenuSeparator />
 
-            <DropdownMenuItem onClick={() => void handleSignOut()}>
+            <DropdownMenuItem
+              onClick={() => {
+                void handleSignOut();
+              }}
+            >
               <LogOut className="mr-2 h-4 w-4" />
               <span>Log out</span>
             </DropdownMenuItem>
@@ -252,7 +258,9 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
             variant={isAuthorized ? "default" : "outline"}
             size="sm"
             className="flex items-center gap-1"
-            onClick={handleGoogleCalendarConnect}
+            onClick={() => {
+              void handleGoogleCalendarConnect();
+            }}
             disabled={isLoading}
           >
             {isLoading ? (
@@ -303,17 +311,20 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
 export function MainLayout({ children }: MainLayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [activeItem, setActiveItem] = React.useState(() => {
+  const [activeItem, setActiveItem] = React.useState("inbox"); // Default value
+
+  // Update activeItem when location changes
+  React.useEffect(() => {
     // Set active item based on current route
     const path = location.pathname;
-    if (path === "/") return "inbox";
-    if (path.includes("/tasks")) return "tasks";
-    if (path.includes("/projects")) return "projects";
-    if (path.includes("/calendar")) return "calendar";
-    if (path.includes("/notes")) return "notes";
-    if (path.includes("/bookmarks")) return "bookmarks";
-    return "tasks";
-  });
+    if (path === "/") setActiveItem("inbox");
+    else if (path.includes("/tasks")) setActiveItem("tasks");
+    else if (path.includes("/projects")) setActiveItem("projects");
+    else if (path.includes("/calendar")) setActiveItem("calendar");
+    else if (path.includes("/notes")) setActiveItem("notes");
+    else if (path.includes("/bookmarks")) setActiveItem("bookmarks");
+    else setActiveItem("tasks");
+  }, [location.pathname]);
 
   // Navigation items for the sidebar
   const navItems = [
@@ -357,7 +368,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   const handleNavigation = (item: (typeof navItems)[0]) => {
     setActiveItem(item.id);
-    navigate(item.path);
+    void navigate(item.path);
   };
 
   return (

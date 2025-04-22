@@ -87,10 +87,6 @@ const convertGoogleEvent = (event: GoogleCalendarEvent): Event => {
   const startDateTime = event.start.dateTime || event.start.date || "";
   const endDateTime = event.end.dateTime || event.end.date || "";
 
-  console.log(
-    `Converting event: ${event.summary}, start: ${startDateTime}, end: ${endDateTime}`
-  );
-
   // Generate a color based on event summary if no color provided
   const defaultColor =
     "#" +
@@ -142,12 +138,10 @@ const convertGoogleEvent = (event: GoogleCalendarEvent): Event => {
 export function CalendarTimeline({ onClose }: { onClose: () => void }) {
   // Get the real current date without modification
   const realToday = new Date();
-  console.log(`Real system date: ${realToday.toISOString()}`);
 
   // Use the actual system date without forcing it to 2024
   // We previously thought the date was incorrect, but the system date is actually 2025
   const today = new Date();
-  console.log(`Using system date as-is: ${today.toISOString()}`);
 
   const [selectedDate, setSelectedDate] = useState(today);
   const [events, setEvents] = useState<Event[]>([]);
@@ -173,21 +167,14 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
 
   // Convert Google Calendar events to our format
   useEffect(() => {
-    // console.log("Raw googleEvents received in Timeline:", googleEvents);
     if (googleEvents && googleEvents.length > 0) {
       try {
-        // console.log(
-        //   `Timeline: Processing ${googleEvents.length} Google Calendar events`
-        // );
         const convertedEvents = googleEvents.map(convertGoogleEvent);
-        // console.log("Timeline: Converted events:", convertedEvents);
         setEvents(convertedEvents);
       } catch (error) {
-        console.error("Error converting Google events:", error);
         setEvents([]); // Clear events on conversion error
       }
     } else {
-      // console.log("Timeline: No Google events to process or googleEvents is null/empty.");
       setEvents([]);
     }
     // Use isLoadingGoogle from the hook directly for loading state
@@ -198,7 +185,6 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     // Don't fetch if not authorized
     if (!isAuthorized) {
-      // console.log("Timeline: Skipping fetch, not authorized.");
       setEvents([]); // Clear events if not authorized
       setIsLoadingEvents(false);
       return;
@@ -209,10 +195,6 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
     const periodStart = startOfDay(selectedDate);
     const periodEnd = endOfDay(selectedDate);
 
-    // console.log(
-    //   `Timeline: Fetching events for date range: ${periodStart.toISOString()} to ${periodEnd.toISOString()}`
-    // );
-
     // Fetch all calendars for the given day
     refreshEvents(
       periodStart.toISOString(), // timeMin
@@ -221,11 +203,9 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
       true // forceRefresh (consider making this false initially unless needed)
     )
       .then(() => {
-        // console.log("Timeline: Event fetch promise resolved.");
         // Loading state is handled by the googleEvents effect
       })
       .catch((err) => {
-        console.error("Timeline: Error fetching events:", err);
         setError(
           err instanceof Error ? err : new Error("Failed to fetch events")
         );
@@ -236,7 +216,6 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
 
   // Filter events for the selected day
   const filteredEvents = useMemo(() => {
-    // console.log(`Timeline: Filtering ${events.length} events for date ${selectedDate.toLocaleDateString()}`);
     return events.filter((event) => {
       const eventStart = new Date(event.startDate);
       const eventEnd = new Date(event.endDate);
@@ -252,9 +231,6 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
         (eventEndTime >= dayStartTime && eventEndTime <= dayEndTime) ||
         (eventStartTime <= dayStartTime && eventEndTime >= dayEndTime);
 
-      // if (isInRange) {
-      //   console.log(`Event in range: ${event.title}, start: ${eventStart.toLocaleString()}, end: ${eventEnd.toLocaleString()}`);
-      // }
       return isInRange;
     });
   }, [events, selectedDate]);
@@ -357,12 +333,6 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
               setIsLoadingEvents(true);
               const periodStart = startOfDay(selectedDate);
               const periodEnd = endOfDay(selectedDate);
-              console.log(
-                `Manual refresh for: ${periodStart.toISOString()} to ${periodEnd.toISOString()}`
-              );
-              console.log(
-                "Manually refreshing Google Calendar events from all calendars"
-              );
               refreshEvents(
                 periodStart.toISOString(), // timeMin
                 periodEnd.toISOString(), // timeMax

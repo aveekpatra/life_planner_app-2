@@ -36,7 +36,7 @@ export function verifyRequiredEnv(names: string[]): boolean {
     names.forEach(getRequiredEnv);
     return true;
   } catch (error) {
-    console.error(error);
+    // console.error(error);
     return false;
   }
 }
@@ -45,14 +45,21 @@ export function verifyRequiredEnv(names: string[]): boolean {
  * Get Google Calendar credentials from environment variables
  */
 export function getGoogleCalendarCredentials() {
+  // Get the current origin for the redirect URI
+  let redirectUri = getOptionalEnv("VITE_GOOGLE_REDIRECT_URI", "");
+
+  // If no redirect URI is provided, use the current origin with a specific path
+  if (!redirectUri && typeof window !== "undefined") {
+    // Always ensure the redirect URI points to the correct callback route
+    redirectUri = `${window.location.origin}/auth/google/callback`;
+    console.log("Generated redirectUri:", redirectUri);
+  }
+
   return {
     apiKey: getOptionalEnv("VITE_GOOGLE_API_KEY", ""),
     clientId: getRequiredEnv("VITE_GOOGLE_CLIENT_ID"),
     clientSecret: getOptionalEnv("VITE_GOOGLE_CLIENT_SECRET", ""),
-    redirectUri: getOptionalEnv(
-      "VITE_GOOGLE_REDIRECT_URI",
-      "http://localhost:5173"
-    ),
+    redirectUri,
     projectId: getOptionalEnv("VITE_GOOGLE_PROJECT_ID", ""),
   };
 }

@@ -8,24 +8,32 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { GoogleCalendarEvent } from "../services/GoogleCalendarService";
 import { Doc, Id } from "../../convex/_generated/dataModel";
+import {
+  format,
+  getDaysInMonth,
+  getDay,
+  addMonths,
+  subMonths,
+  addDays,
+  subDays,
+  startOfWeek,
+  endOfWeek,
+  isSameDay,
+  isToday,
+  isFuture,
+  differenceInMinutes,
+  startOfMonth,
+  endOfMonth,
+  setHours,
+  setMinutes,
+  setSeconds,
+  setMilliseconds,
+} from "date-fns";
 
-// Helper function to create calendar grid
-const getDaysInMonth = (year: number, month: number): number => {
-  return new Date(year, month + 1, 0).getDate();
-};
-
-const getFirstDayOfMonth = (year: number, month: number): number => {
-  return new Date(year, month, 1).getDay();
-};
-
-// Get start and end date of a week for a given date
+// Helper function to get start and end date of a week for a given date
 const getWeekRange = (date: Date) => {
-  const day = date.getDay();
-  const diff = date.getDate() - day;
-  const start = new Date(date);
-  start.setDate(diff);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 6);
+  const start = startOfWeek(date, { weekStartsOn: 0 }); // Sunday as first day of week
+  const end = endOfWeek(date, { weekStartsOn: 0 });
   return { start, end };
 };
 
@@ -140,9 +148,9 @@ export function CalendarWidget() {
 
   // Debug the current date
   const realToday = new Date();
-  console.log(`Real today's date: ${realToday.toISOString()}`);
-  console.log(`Current year should be: ${realToday.getFullYear()}`);
-  console.log(`Current month should be: ${realToday.getMonth()}`);
+  // console.log(`Real today's date: ${realToday.toISOString()}`);
+  // console.log(`Current year should be: ${realToday.getFullYear()}`);
+  // console.log(`Current month should be: ${realToday.getMonth()}`);
 
   // Force the correct date to ensure we're not using a future date
   const today = new Date();
@@ -151,9 +159,9 @@ export function CalendarWidget() {
   const [currentDate, setCurrentDate] = useState(today);
 
   // Log the initialized state to debug
-  console.log(
-    `CalendarWidget initialized with year: ${currentYear}, month: ${currentMonth}`
-  );
+  // console.log(
+  //   `CalendarWidget initialized with year: ${currentYear}, month: ${currentMonth}`
+  // );
 
   const [view, setView] = useState<CalendarView>("week");
   const [mergedEvents, setMergedEvents] = useState<CalendarEventBase[]>([]);
@@ -172,17 +180,16 @@ export function CalendarWidget() {
   // Force reset the date if we detect an unreasonable future date (> 1 year from now)
   useEffect(() => {
     const realNow = new Date();
-    const oneYearFromNow = new Date();
-    oneYearFromNow.setFullYear(realNow.getFullYear() + 1);
+    const oneYearFromNow = addDays(realNow, 365);
 
     if (
       currentYear > oneYearFromNow.getFullYear() ||
       (currentYear === oneYearFromNow.getFullYear() &&
         currentMonth > oneYearFromNow.getMonth())
     ) {
-      console.log(
-        `Correcting unreasonable future date: ${currentYear}-${currentMonth + 1} to ${realNow.getFullYear()}-${realNow.getMonth() + 1}`
-      );
+      // console.log(
+      //   `Correcting unreasonable future date: ${currentYear}-${currentMonth + 1} to ${realNow.getFullYear()}-${realNow.getMonth() + 1}`
+      // );
       setCurrentYear(realNow.getFullYear());
       setCurrentMonth(realNow.getMonth());
       setCurrentDate(realNow);
@@ -197,14 +204,14 @@ export function CalendarWidget() {
     let allEvents: CalendarEventBase[] = localEventsData.map(convertLocalEvent);
 
     if (isAuthorized && showGoogleEvents) {
-      console.log(
-        `Google Calendar events available: ${googleEvents ? googleEvents.length : "none"}`
-      );
+      // console.log(
+      //   `Google Calendar events available: ${googleEvents ? googleEvents.length : "none"}`
+      // );
 
       if (googleEvents && googleEvents.length > 0) {
-        console.log(
-          `Merging ${googleEvents.length} Google events with ${allEvents.length} local events`
-        );
+        // console.log(
+        //   `Merging ${googleEvents.length} Google events with ${allEvents.length} local events`
+        // );
         const convertedGoogleEvents = googleEvents.map(convertGoogleEvent);
         allEvents = [...allEvents, ...convertedGoogleEvents];
 
@@ -218,11 +225,11 @@ export function CalendarWidget() {
           return a.startDate - b.startDate;
         });
       } else {
-        console.log("No Google Calendar events to merge");
+        // console.log("No Google Calendar events to merge");
       }
     }
 
-    console.log(`Total merged events: ${allEvents.length}`);
+    // console.log(`Total merged events: ${allEvents.length}`);
     setMergedEvents(allEvents);
   }, [localEventsData, googleEvents, isAuthorized, showGoogleEvents]);
 
@@ -240,24 +247,20 @@ export function CalendarWidget() {
   useEffect(() => {
     if (isAuthorized && !eventsInitialized.current && !isLoading) {
       eventsInitialized.current = true;
-      console.log("Initial load of Google Calendar events");
+      // console.log("Initial load of Google Calendar events");
 
-      const startOfMonth = new Date(currentYear, currentMonth, 1);
-      const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
+      const start = startOfMonth(new Date(currentYear, currentMonth, 1));
+      const end = endOfMonth(new Date(currentYear, currentMonth, 1));
 
-      console.log(
-        `[Initial Load] Fetching for: ${startOfMonth.toISOString()} to ${endOfMonth.toISOString()}`
-      );
+      // console.log(
+      //   `[Initial Load] Fetching for: ${start.toISOString()} to ${end.toISOString()}`
+      // );
 
       // Clear any previous fetch key to force a refresh
       lastFetchedMonth.current = "";
 
       // Use void to ignore the Promise - only use required parameters
-      void refreshEvents(
-        "primary",
-        startOfMonth.toISOString(),
-        endOfMonth.toISOString()
-      );
+      void refreshEvents("primary", start.toISOString(), end.toISOString());
     }
   }, [isAuthorized, isLoading, refreshEvents, currentYear, currentMonth]);
 
@@ -266,13 +269,13 @@ export function CalendarWidget() {
     if (isAuthorized) {
       const currentDateRange = getDateRangeKey();
 
-      console.log(
-        `Current date range key: ${currentDateRange} (Year: ${currentYear}, Month: ${currentMonth})`
-      );
+      // console.log(
+      //   `Current date range key: ${currentDateRange} (Year: ${currentYear}, Month: ${currentMonth})`
+      // );
 
       // Only fetch if we haven't fetched this date range yet
       if (currentDateRange !== lastFetchedMonth.current) {
-        console.log(`Fetching events for new date range: ${currentDateRange}`);
+        // console.log(`Fetching events for new date range: ${currentDateRange}`);
         lastFetchedMonth.current = currentDateRange;
 
         let startDate, endDate;
@@ -280,31 +283,32 @@ export function CalendarWidget() {
         if (view === "month") {
           // Start from the beginning of the first week shown in the month view
           // This ensures we get events that start in the previous month but show in the current month view
-          const firstDay = getFirstDayOfMonth(currentYear, currentMonth);
-          startDate = new Date(currentYear, currentMonth, 1);
-          startDate.setDate(startDate.getDate() - firstDay); // Go back to include the first week
+          const firstOfMonth = new Date(currentYear, currentMonth, 1);
+          const firstDayOfMonth = getDay(firstOfMonth);
+          startDate = subDays(firstOfMonth, firstDayOfMonth);
 
           // End at the last day of the calendar grid
-          const daysInMonth = getDaysInMonth(currentYear, currentMonth);
-          const totalDaysShown = firstDay + daysInMonth;
+          const lastOfMonth = endOfMonth(
+            new Date(currentYear, currentMonth, 1)
+          );
+          const daysInMonth = getDaysInMonth(
+            new Date(currentYear, currentMonth, 1)
+          );
+          const totalDaysShown = firstDayOfMonth + daysInMonth;
           const weeksNeeded = Math.ceil(totalDaysShown / 7);
           const totalDaysInGrid = weeksNeeded * 7;
           const remainingDays = totalDaysInGrid - totalDaysShown;
 
-          endDate = new Date(
-            currentYear,
-            currentMonth,
-            daysInMonth + remainingDays
-          );
+          endDate = addDays(lastOfMonth, remainingDays);
         } else {
           const { start, end } = getWeekRange(currentDate);
           startDate = start;
           endDate = end;
         }
 
-        console.log(
-          `[Date Range Change] Fetching for: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`
-        );
+        // console.log(
+        //   `[Date Range Change] Fetching for: ${format(startDate, "yyyy-MM-dd")} to ${format(endDate, "yyyy-MM-dd")}`
+        // );
 
         // Use void to ignore the Promise - only use required parameters
         void refreshEvents(
@@ -327,16 +331,12 @@ export function CalendarWidget() {
   // Navigate to previous/next month or week
   const goToPrevious = () => {
     if (view === "month") {
-      if (currentMonth === 0) {
-        setCurrentMonth(11);
-        setCurrentYear(currentYear - 1);
-      } else {
-        setCurrentMonth(currentMonth - 1);
-      }
+      const newDate = subMonths(new Date(currentYear, currentMonth, 1), 1);
+      setCurrentMonth(newDate.getMonth());
+      setCurrentYear(newDate.getFullYear());
     } else {
       // Week view
-      const newDate = new Date(currentDate);
-      newDate.setDate(currentDate.getDate() - 7);
+      const newDate = subDays(currentDate, 7);
       setCurrentDate(newDate);
       setCurrentMonth(newDate.getMonth());
       setCurrentYear(newDate.getFullYear());
@@ -345,16 +345,12 @@ export function CalendarWidget() {
 
   const goToNext = () => {
     if (view === "month") {
-      if (currentMonth === 11) {
-        setCurrentMonth(0);
-        setCurrentYear(currentYear + 1);
-      } else {
-        setCurrentMonth(currentMonth + 1);
-      }
+      const newDate = addMonths(new Date(currentYear, currentMonth, 1), 1);
+      setCurrentMonth(newDate.getMonth());
+      setCurrentYear(newDate.getFullYear());
     } else {
       // Week view
-      const newDate = new Date(currentDate);
-      newDate.setDate(currentDate.getDate() + 7);
+      const newDate = addDays(currentDate, 7);
       setCurrentDate(newDate);
       setCurrentMonth(newDate.getMonth());
       setCurrentYear(newDate.getFullYear());
@@ -375,8 +371,8 @@ export function CalendarWidget() {
 
   // Generate days for the calendar grid
   const generateCalendarDays = () => {
-    const daysInMonth = getDaysInMonth(currentYear, currentMonth);
-    const firstDayOfMonth = getFirstDayOfMonth(currentYear, currentMonth);
+    const daysInMonth = getDaysInMonth(new Date(currentYear, currentMonth, 1));
+    const firstDayOfMonth = getDay(new Date(currentYear, currentMonth, 1));
 
     const days = [];
 
@@ -400,9 +396,7 @@ export function CalendarWidget() {
 
     // Generate 7 days from the start of the week
     for (let i = 0; i < 7; i++) {
-      const date = new Date(start);
-      date.setDate(start.getDate() + i);
-      days.push(date);
+      days.push(addDays(start, i));
     }
 
     return days;
@@ -416,10 +410,14 @@ export function CalendarWidget() {
     if (day === null) return [];
 
     const targetDate = new Date(year, month, day);
-    const targetDateStart = new Date(targetDate);
-    targetDateStart.setHours(0, 0, 0, 0);
-    const targetDateEnd = new Date(targetDate);
-    targetDateEnd.setHours(23, 59, 59, 999);
+    const targetDateStart = setHours(
+      setMinutes(setSeconds(setMilliseconds(targetDate, 0), 0), 0),
+      0
+    );
+    const targetDateEnd = setHours(
+      setMinutes(setSeconds(setMilliseconds(targetDate, 999), 59), 59),
+      23
+    );
 
     const targetStartTime = targetDateStart.getTime();
     const targetEndTime = targetDateEnd.getTime();
@@ -444,11 +442,14 @@ export function CalendarWidget() {
   };
 
   const getEventsForDateObject = (date: Date) => {
-    const targetDate = new Date(date);
-    const targetDateStart = new Date(targetDate);
-    targetDateStart.setHours(0, 0, 0, 0);
-    const targetDateEnd = new Date(targetDate);
-    targetDateEnd.setHours(23, 59, 59, 999);
+    const targetDateStart = setHours(
+      setMinutes(setSeconds(setMilliseconds(date, 0), 0), 0),
+      0
+    );
+    const targetDateEnd = setHours(
+      setMinutes(setSeconds(setMilliseconds(date, 999), 59), 59),
+      23
+    );
 
     const targetStartTime = targetDateStart.getTime();
     const targetEndTime = targetDateEnd.getTime();
@@ -464,11 +465,7 @@ export function CalendarWidget() {
 
       // For regular timed events
       const eventDate = new Date(event.startDate);
-      return (
-        eventDate.getDate() === date.getDate() &&
-        eventDate.getMonth() === date.getMonth() &&
-        eventDate.getFullYear() === date.getFullYear()
-      );
+      return isSameDay(eventDate, date);
     });
   };
 
@@ -482,16 +479,14 @@ export function CalendarWidget() {
   // Get the date range for the header display
   const getHeaderDateDisplay = () => {
     if (view === "month") {
-      return `${MONTHS[currentMonth]} ${currentYear}`;
+      return format(new Date(currentYear, currentMonth, 1), "MMMM yyyy");
     } else {
       const { start, end } = getWeekRange(currentDate);
-      const startMonth = MONTHS[start.getMonth()].substring(0, 3);
-      const endMonth = MONTHS[end.getMonth()].substring(0, 3);
 
       if (start.getMonth() === end.getMonth()) {
-        return `${startMonth} ${start.getDate()} - ${end.getDate()}, ${end.getFullYear()}`;
+        return `${format(start, "MMM d")} - ${format(end, "d")}, ${format(end, "yyyy")}`;
       } else {
-        return `${startMonth} ${start.getDate()} - ${endMonth} ${end.getDate()}, ${end.getFullYear()}`;
+        return `${format(start, "MMM d")} - ${format(end, "MMM d")}, ${format(end, "yyyy")}`;
       }
     }
   };
@@ -499,6 +494,8 @@ export function CalendarWidget() {
   // Handle manual refresh of Google Calendar events
   const handleRefreshGoogleEvents = () => {
     if (isAuthorized) {
+      console.log("Manually refreshing Google Calendar events");
+
       // Force a refresh by clearing the last fetched flag
       lastFetchedMonth.current = "";
 
@@ -506,22 +503,21 @@ export function CalendarWidget() {
 
       if (view === "month") {
         // Start from the beginning of the first week shown in the month view
-        const firstDay = getFirstDayOfMonth(currentYear, currentMonth);
-        startDate = new Date(currentYear, currentMonth, 1);
-        startDate.setDate(startDate.getDate() - firstDay); // Go back to include the first week
+        const firstOfMonth = new Date(currentYear, currentMonth, 1);
+        const firstDayOfMonth = getDay(firstOfMonth);
+        startDate = subDays(firstOfMonth, firstDayOfMonth);
 
         // End at the last day of the calendar grid
-        const daysInMonth = getDaysInMonth(currentYear, currentMonth);
-        const totalDaysShown = firstDay + daysInMonth;
+        const lastOfMonth = endOfMonth(new Date(currentYear, currentMonth, 1));
+        const daysInMonth = getDaysInMonth(
+          new Date(currentYear, currentMonth, 1)
+        );
+        const totalDaysShown = firstDayOfMonth + daysInMonth;
         const weeksNeeded = Math.ceil(totalDaysShown / 7);
         const totalDaysInGrid = weeksNeeded * 7;
         const remainingDays = totalDaysInGrid - totalDaysShown;
 
-        endDate = new Date(
-          currentYear,
-          currentMonth,
-          daysInMonth + remainingDays
-        );
+        endDate = addDays(lastOfMonth, remainingDays);
       } else {
         const { start, end } = getWeekRange(currentDate);
         startDate = start;
@@ -529,17 +525,16 @@ export function CalendarWidget() {
       }
 
       console.log(
-        `[Manual Refresh] Fetching for: ${startDate.toISOString()} to ${endDate.toISOString()}`
-      );
-      console.log(
-        "Manually refreshing Google Calendar events from all calendars"
+        `Manual refresh for: ${startDate.toISOString()} to ${endDate.toISOString()}`
       );
 
-      // Use void to ignore the Promise - only use required parameters
+      // Use void to ignore the Promise
       void refreshEvents(
         "primary",
         startDate.toISOString(),
-        endDate.toISOString()
+        endDate.toISOString(),
+        250, // maxResults
+        true // forceRefresh - force refresh from API
       );
     } else {
       console.log("Cannot refresh - not authorized with Google Calendar");
@@ -682,7 +677,7 @@ export function CalendarWidget() {
         {view === "month" && (
           <div className="grid grid-cols-7 grid-rows-{calendarRows}">
             {calendarDays.map((day, i) => {
-              const isToday =
+              const isCurrentDay =
                 day === today.getDate() &&
                 currentMonth === today.getMonth() &&
                 currentYear === today.getFullYear();
@@ -705,7 +700,7 @@ export function CalendarWidget() {
                   {day !== null && (
                     <div className="h-full">
                       <div
-                        className={`flex justify-center items-center w-7 h-7 rounded-full text-xs mb-1 ${isToday ? "bg-primary text-primary-foreground font-medium" : ""}`}
+                        className={`flex justify-center items-center w-7 h-7 rounded-full text-xs mb-1 ${isCurrentDay ? "bg-primary text-primary-foreground font-medium" : ""}`}
                       >
                         {day}
                       </div>
@@ -714,10 +709,7 @@ export function CalendarWidget() {
                           // Format the start time if not all-day
                           const timeLabel = event.isAllDay
                             ? "All day"
-                            : new Date(event.startDate).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              });
+                            : format(new Date(event.startDate), "h:mm a");
 
                           return (
                             <div
@@ -755,11 +747,7 @@ export function CalendarWidget() {
         {view === "week" && (
           <div className="grid grid-cols-7">
             {weekDays.map((date, i) => {
-              const isToday =
-                date.getDate() === today.getDate() &&
-                date.getMonth() === today.getMonth() &&
-                date.getFullYear() === today.getFullYear();
-
+              const isCurrentDay = isToday(date);
               const eventsForDay = getEventsForDateObject(date);
 
               // Sort events: all-day first, then by start time
@@ -781,13 +769,13 @@ export function CalendarWidget() {
                 <div key={i} className="min-h-[140px] p-1 border">
                   <div className="h-full">
                     <div
-                      className={`flex flex-col items-center mb-1 ${isToday ? "font-medium" : ""}`}
+                      className={`flex flex-col items-center mb-1 ${isCurrentDay ? "font-medium" : ""}`}
                     >
                       <span className="text-xs text-muted-foreground">
                         {DAYS[i]}
                       </span>
                       <div
-                        className={`flex justify-center items-center w-7 h-7 rounded-full text-xs ${isToday ? "bg-primary text-primary-foreground font-medium" : ""}`}
+                        className={`flex justify-center items-center w-7 h-7 rounded-full text-xs ${isCurrentDay ? "bg-primary text-primary-foreground font-medium" : ""}`}
                       >
                         {date.getDate()}
                       </div>
@@ -824,16 +812,15 @@ export function CalendarWidget() {
                     {/* Timed events section */}
                     <div className="space-y-1 overflow-auto max-h-[120px]">
                       {timedEvents.map((event) => {
-                        const startTime = new Date(
-                          event.startDate
-                        ).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        });
+                        const startTime = format(
+                          new Date(event.startDate),
+                          "h:mm a"
+                        );
+                        const duration = differenceInMinutes(
+                          new Date(event.endDate),
+                          new Date(event.startDate)
+                        );
 
-                        const duration = Math.round(
-                          (event.endDate - event.startDate) / (60 * 1000)
-                        ); // minutes
                         const durationText =
                           duration < 60
                             ? `${duration}m`
@@ -898,22 +885,13 @@ export function CalendarWidget() {
               .map((event) => {
                 const startDate = new Date(event.startDate);
                 const endDate = new Date(event.endDate);
-                const isToday =
-                  startDate.toDateString() === new Date().toDateString();
-                const isTomorrow =
-                  new Date(startDate).setHours(0, 0, 0, 0) ===
-                  new Date(
-                    new Date().setDate(new Date().getDate() + 1)
-                  ).setHours(0, 0, 0, 0);
+                const isEventToday = isToday(startDate);
+                const isTomorrow = isToday(addDays(startDate, -1));
 
                 // Format the date label based on when event occurs
-                let dateLabel = startDate.toLocaleDateString(undefined, {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                });
+                let dateLabel = format(startDate, "EEE, MMM d");
 
-                if (isToday) {
+                if (isEventToday) {
                   dateLabel = "Today";
                 } else if (isTomorrow) {
                   dateLabel = "Tomorrow";
@@ -956,15 +934,9 @@ export function CalendarWidget() {
                           <span>All day</span>
                         ) : (
                           <span>
-                            {startDate.toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
+                            {format(startDate, "h:mm a")}
                             {" - "}
-                            {endDate.toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
+                            {format(endDate, "h:mm a")}
                           </span>
                         )}
                         {event.location && (
