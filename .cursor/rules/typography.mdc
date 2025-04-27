@@ -1,0 +1,44 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Typography System
+
+## Font Configuration
+- [tailwind.config.js](mdc:tailwind.config.js): Defines font families
+- [src/index.css](mdc:src/index.css): Contains utility classes and global styles
+
+## Font Families
+- **Body Text**: "Inter" - A clean, modern sans-serif font optimized for screens
+- **Headings**: "Poppins" - A geometric sans-serif with distinctive characters for headlines
+
+## Implementation
+- Tailwind configuration defines font families in the theme:
+  ```js
+  fontFamily: {
+    sans: ["Inter", "system-ui", "sans-serif"],
+    heading: ["Poppins", "system-ui", "sans-serif"],
+  }
+  ```
+- Custom utility class `.font-heading` for easy application to headings:
+  ```css
+  @layer utilities {
+    .font-heading {
+      font-family: "Poppins", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+  }
+  ```
+
+## Usage Pattern
+- All widget headings use the `.font-heading` class:
+  ```jsx
+  <h2 className="text-xl font-medium text-card-foreground font-heading">Widget Title</h2>
+  ```
+- Body text uses the default font family ("Inter") through Tailwind's `.font-sans` or implicitly
+
+## Components Using Custom Typography
+- [src/components/CalendarWidget.tsx](mdc:src/components/CalendarWidget.tsx)
+- [src/components/NotesWidget.tsx](mdc:src/components/NotesWidget.tsx)
+- [src/components/TodoWidget.tsx](mdc:src/components/TodoWidget.tsx)
+- [src/pages/Home.tsx](mdc:src/pages/Home.tsx)

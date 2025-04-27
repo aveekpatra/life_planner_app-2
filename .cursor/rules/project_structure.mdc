@@ -17,14 +17,25 @@ alwaysApply: false
   - Database schema
   - API endpoints (queries, mutations, actions)
   - Authentication logic
+- `public/`: Static assets and public files
 
 ## Key Files
 - [src/main.tsx](mdc:src/main.tsx): Application entry point
+- [src/index.css](mdc:src/index.css): Global styles and CSS utilities
+- [tailwind.config.js](mdc:tailwind.config.js): Tailwind CSS configuration including fonts
 - [convex/schema.ts](mdc:convex/schema.ts): Database schema
 - [src/components/MainLayout.tsx](mdc:src/components/MainLayout.tsx): Main application layout
 - [src/hooks/useGoogleCalendar.ts](mdc:src/hooks/useGoogleCalendar.ts): Google Calendar integration hook
+
+## Styling
+- Uses Tailwind CSS for utility-based styling
+- Custom font configuration with "Inter" for body text and "Poppins" for headings
+- Custom utility classes in index.css (e.g., .font-heading)
+- Shadcn UI components provide consistent design components
 
 ## Patterns
 - Widget components (`*Widget.tsx`) display specific functionality sections
 - Convex functions are organized by entity (tasks.ts, events.ts, etc.)
 - UI components are in the src/components/ui directory
+- Custom hooks provide reusable functionality
+- Service files handle external API integrations

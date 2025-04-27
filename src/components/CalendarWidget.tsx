@@ -136,13 +136,13 @@ export function CalendarWidget() {
   const [currentDate, setCurrentDate] = useState(today);
   const [view, setView] = useState<CalendarView>("week");
 
-  const [processedEvents, setProcessedEvents] = useState<
-    ReturnType<typeof convertGoogleEvent>[]
-  >([]);
   const previousDateRange = useRef("");
 
   const syncAllCalendars = useAction(
     api.googleCalendarEvents.syncEventsFromAllCalendars
+  );
+  const refreshCalendarList = useAction(
+    api.googleCalendarAuth.refreshCalendarList
   );
 
   const {
@@ -173,58 +173,7 @@ export function CalendarWidget() {
     }
   }, [currentYear, currentMonth]);
 
-  // Process Google events
   useEffect(() => {
-    if (isAuthorized && googleEvents && googleEvents.length > 0) {
-      const convertedGoogleEvents = googleEvents.map(convertGoogleEvent);
-
-      // Sort events by start date and then by all-day status (all-day events first)
-      convertedGoogleEvents.sort((a, b) => {
-        // All-day events come first
-        if (a.isAllDay && !b.isAllDay) return -1;
-        if (!a.isAllDay && b.isAllDay) return 1;
-
-        // Then sort by start date
-        return a.startDate - b.startDate;
-      });
-
-      setProcessedEvents(convertedGoogleEvents);
-    } else {
-      setProcessedEvents([]);
-    }
-  }, [googleEvents, isAuthorized]);
-
-  const refreshGoogleCalendarEvents = useCallback(
-    async (startTimeStr: string, endTimeStr: string) => {
-      if (!isAuthorized) return;
-
-      console.log(
-        `Refreshing Google Calendar events from ${startTimeStr} to ${endTimeStr}`
-      );
-      try {
-        // First refresh from primary calendar to get UI updated quickly
-        await refreshEvents("primary", startTimeStr, endTimeStr);
-
-        // Then sync from all calendars to ensure we get everything
-        const result = await syncAllCalendars({
-          timeMin: startTimeStr,
-          timeMax: endTimeStr,
-          maxResults: 250,
-        });
-
-        console.log("Synced events from all calendars:", result);
-      } catch (error) {
-        console.error("Error refreshing Google Calendar events:", error);
-      }
-    },
-    [isAuthorized, refreshEvents, syncAllCalendars]
-  );
-
-  useEffect(() => {
-    console.log(
-      `Mode: ${view}, Current Year: ${currentYear}, Current Month: ${currentMonth + 1}`
-    );
-
     // Validate the current date parameters to ensure they're reasonable
     const currentDate = new Date();
     const maxAllowedYear = currentDate.getFullYear() + 1; // Allow up to 1 year in the future
@@ -244,10 +193,6 @@ export function CalendarWidget() {
         ? new Date(currentYear, currentMonth + 1, 0, 23, 59, 59)
         : add(startDate, { days: 6, hours: 23, minutes: 59, seconds: 59 });
 
-    console.log(
-      `Fetching events for date range: ${startDate.toISOString()} to ${endDate.toISOString()}`
-    );
-
     // Prevent fetching events if the date range is invalid
     if (
       startDate > endDate ||
@@ -261,7 +206,6 @@ export function CalendarWidget() {
     // Use previousDateRange to avoid redundant refreshes
     const newDateRangeKey = `${startDate.toISOString()}-${endDate.toISOString()}`;
     if (previousDateRange.current === newDateRangeKey) {
-      console.log("Skip refresh - same date range as before");
       return;
     }
 
@@ -285,23 +229,20 @@ export function CalendarWidget() {
       const startTimeStr = startDate.toISOString();
       const endTimeStr = endDate.toISOString();
 
-      console.log(
-        `Fetching events for date range: ${startTimeStr} to ${endTimeStr}`
-      );
-
       try {
-        // Refresh Google Calendar events if authorized
-        if (isAuthorized) {
-          // First refresh primary calendar for immediate UI update
-          void refreshEvents("primary", startTimeStr, endTimeStr);
+        // First sync from all calendars to ensure we get comprehensive data
+        await syncAllCalendars({
+          timeMin: startTimeStr,
+          timeMax: endTimeStr,
+          maxResults: 250,
+        });
 
-          // Then sync from all calendars to ensure we get comprehensive data
-          void syncAllCalendars({
-            timeMin: startTimeStr,
-            timeMax: endTimeStr,
-            maxResults: 250,
-          });
-        }
+        // Then refresh UI with the synced data
+        await refreshEvents(
+          undefined, // Use all calendars instead of just primary
+          startTimeStr,
+          endTimeStr
+        );
       } catch (error) {
         console.error("Error fetching events:", error);
       }
@@ -313,8 +254,8 @@ export function CalendarWidget() {
     currentMonth,
     view,
     isAuthorized,
-    refreshGoogleCalendarEvents,
     syncAllCalendars,
+    refreshEvents,
   ]);
 
   // Navigate to previous/next month or week
@@ -395,35 +336,22 @@ export function CalendarWidget() {
   const getEventsForDate = (date: Date) => {
     if (!googleEvents || googleEvents.length === 0) return [];
 
-    console.log(`Checking for events on date: ${date.toISOString()}`);
-
-    // Format the target date as YYYY-MM-DD for accurate comparison
+    // Get the start and end of the target day in local time
     const year = date.getFullYear();
     const month = date.getMonth();
     const day = date.getDate();
-
-    // Get the start and end of the target day in local time
     const targetDayStart = new Date(year, month, day, 0, 0, 0, 0).getTime();
     const targetDayEnd = new Date(year, month, day, 23, 59, 59, 999).getTime();
 
-    // Convert Google events to our format for easier handling
-    const convertedEvents = googleEvents.map(convertGoogleEvent);
+    return googleEvents.map(convertGoogleEvent).filter((event) => {
+      const eventStartTime = event.startDate;
+      const eventEndTime = event.endDate;
 
-    return convertedEvents.filter((event) => {
-      // For all-day events, we need to check if the target date falls within the event's date range
       if (event.isAllDay) {
-        const eventStartTime = event.startDate;
-        const eventEndTime = event.endDate;
-
-        // An all-day event overlaps with our target day if:
-        // 1. The event starts on or before the end of our target day AND
-        // 2. The event ends on or after the start of our target day
+        // An all-day event overlaps with our target day if it starts on or before the end of our target day
+        // AND ends on or after the start of our target day
         return eventStartTime <= targetDayEnd && eventEndTime >= targetDayStart;
       } else {
-        // For regular events, check if they overlap with the target day
-        const eventStartTime = event.startDate;
-        const eventEndTime = event.endDate;
-
         // A regular event overlaps with our target day if:
         // 1. It starts during our target day, OR
         // 2. It ends during our target day, OR
@@ -465,67 +393,76 @@ export function CalendarWidget() {
 
   // Handle manual refresh of Google Calendar events
   const handleRefreshGoogleEvents = () => {
-    if (isAuthorized) {
-      console.log("Manually refreshing Google Calendar events");
+    if (!isAuthorized) {
+      console.log("Cannot refresh - not authorized with Google Calendar");
+      return;
+    }
 
-      // Force a refresh by clearing the previous date range flag
-      previousDateRange.current = "";
+    // Force a refresh by clearing the previous date range flag
+    previousDateRange.current = "";
 
-      let startDate, endDate;
+    let startDate, endDate;
 
-      if (view === "month") {
-        // Start from the beginning of the first week shown in the month view
-        const firstOfMonth = new Date(currentYear, currentMonth, 1);
-        const firstDayOfMonth = getDay(firstOfMonth);
-        startDate = subDays(firstOfMonth, firstDayOfMonth);
+    if (view === "month") {
+      // Start from the beginning of the first week shown in the month view
+      const firstOfMonth = new Date(currentYear, currentMonth, 1);
+      const firstDayOfMonth = getDay(firstOfMonth);
+      startDate = subDays(firstOfMonth, firstDayOfMonth);
 
-        // End at the last day of the calendar grid
-        const lastOfMonth = endOfMonth(new Date(currentYear, currentMonth, 1));
-        const daysInMonth = getDaysInMonth(
-          new Date(currentYear, currentMonth, 1)
-        );
-        const totalDaysShown = firstDayOfMonth + daysInMonth;
-        const weeksNeeded = Math.ceil(totalDaysShown / 7);
-        const totalDaysInGrid = weeksNeeded * 7;
-        const remainingDays = totalDaysInGrid - totalDaysShown;
-
-        endDate = addDays(lastOfMonth, remainingDays);
-      } else {
-        const { start, end } = getWeekRange(currentDate);
-        startDate = start;
-        endDate = end;
-      }
-
-      console.log(
-        `Manual refresh for: ${startDate.toISOString()} to ${endDate.toISOString()}`
+      // End at the last day of the calendar grid
+      const lastOfMonth = endOfMonth(new Date(currentYear, currentMonth, 1));
+      const daysInMonth = getDaysInMonth(
+        new Date(currentYear, currentMonth, 1)
       );
+      const totalDaysShown = firstDayOfMonth + daysInMonth;
+      const weeksNeeded = Math.ceil(totalDaysShown / 7);
+      const totalDaysInGrid = weeksNeeded * 7;
+      const remainingDays = totalDaysInGrid - totalDaysShown;
 
-      // First refresh primary calendar for immediate UI update
+      endDate = addDays(lastOfMonth, remainingDays);
+    } else {
+      const { start, end } = getWeekRange(currentDate);
+      startDate = start;
+      endDate = end;
+    }
+
+    // First synchronize events from all calendars then refresh the UI
+    void syncAllCalendars({
+      timeMin: startDate.toISOString(),
+      timeMax: endDate.toISOString(),
+      maxResults: 250,
+    }).then(() => {
       void refreshEvents(
-        "primary",
+        undefined, // Use all calendars instead of just primary
         startDate.toISOString(),
         endDate.toISOString(),
         250, // maxResults
         true // forceRefresh - force refresh from API
       );
+    });
+  };
 
-      // Then sync from all calendars
-      void syncAllCalendars({
-        timeMin: startDate.toISOString(),
-        timeMax: endDate.toISOString(),
-        maxResults: 250,
+  // Add a function to refresh the calendar list and then events
+  const handleRefreshCalendarList = () => {
+    if (!isAuthorized) return;
+
+    try {
+      // First refresh the calendar list to get all available calendars
+      void refreshCalendarList({}).then((result) => {
+        console.log("Calendar list refresh result:", result);
+
+        if (result.success) {
+          // Then refresh events from all calendars
+          handleRefreshGoogleEvents();
+        }
       });
-    } else {
-      console.log("Cannot refresh - not authorized with Google Calendar");
+    } catch (error) {
+      console.error("Error refreshing calendar list:", error);
     }
   };
 
   // Generate calendar rows using current date
   const calendarRows = useMemo(() => {
-    const currentDate = new Date();
-    console.log(
-      `Generating calendar with current date: ${currentDate.toISOString()}`
-    );
     return generateCalendarRows(currentMonth, currentYear);
   }, [currentMonth, currentYear]);
 
@@ -630,18 +567,32 @@ export function CalendarWidget() {
               {googleEvents.length > 0 && ` (${googleEvents.length})`}
             </Badge>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleRefreshGoogleEvents}
-            disabled={isLoading}
-            className="flex items-center gap-1"
-          >
-            <RefreshCw
-              className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`}
-            />
-            <span className="text-xs">Refresh</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefreshCalendarList}
+              disabled={isLoading}
+              className="flex items-center gap-1"
+            >
+              <RefreshCw
+                className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`}
+              />
+              <span className="text-xs">Refresh Calendars</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefreshGoogleEvents}
+              disabled={isLoading}
+              className="flex items-center gap-1"
+            >
+              <RefreshCw
+                className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`}
+              />
+              <span className="text-xs">Refresh Events</span>
+            </Button>
+          </div>
         </div>
       )}
 

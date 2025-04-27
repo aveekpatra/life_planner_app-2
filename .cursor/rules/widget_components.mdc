@@ -7,18 +7,25 @@ alwaysApply: false
 
 ## Widget Pattern
 All widgets follow a similar pattern:
-- Fetch data using Convex `useQuery`
-- Provide interactions through Convex `useMutation`
+- Fetch data using Convex `useQuery` or custom hooks
+- Provide interactions through Convex `useMutation` and `useAction`
 - Maintain local UI state with React hooks
 - Support both read and write operations
+- Consistent styling with shared UI components
 
 ## Main Widgets
-- [src/components/CalendarWidget.tsx](mdc:src/components/CalendarWidget.tsx): Calendar with month/week views
+- [src/components/CalendarWidget.tsx](mdc:src/components/CalendarWidget.tsx): Calendar with month/week views and Google Calendar integration
 - [src/components/TasksWidget.tsx](mdc:src/components/TasksWidget.tsx): Task management
 - [src/components/NotesWidget.tsx](mdc:src/components/NotesWidget.tsx): Notes capture and display
 - [src/components/ProjectsWidget.tsx](mdc:src/components/ProjectsWidget.tsx): Project management
 - [src/components/QuickCapture.tsx](mdc:src/components/QuickCapture.tsx): Quick input for tasks and notes
 - [src/components/TodoWidget.tsx](mdc:src/components/TodoWidget.tsx): Todo list management
+
+## UI Consistency
+- All widgets use the heading font "Poppins" for titles
+- Content uses "Inter" as the primary body font
+- Consistent card styling with rounded borders and subtle shadows
+- Uniform spacing and padding patterns
 
 ## Integration Pattern
 Widgets combine to form a complete life planning application with:
@@ -26,3 +33,9 @@ Widgets combine to form a complete life planning application with:
 - Calendar events (both local and Google Calendar)
 - Notes
 - Projects organization
+
+## Performance Optimizations
+- Event handlers debounced where appropriate
+- Efficient state management to prevent unnecessary re-renders
+- Strategic use of useCallback, useMemo, and useRef for optimized performance
+- Date range tracking to prevent duplicate data fetching

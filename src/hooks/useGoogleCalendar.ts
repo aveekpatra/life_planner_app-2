@@ -186,7 +186,7 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
   // Clear error when auth status changes
   useEffect(() => {
     if (error && !isAuthorized) {
-    setError(null);
+      setError(null);
     }
   }, [isAuthorized, error]);
 
@@ -203,7 +203,7 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
 
     // Clear local state
     if (events.length > 0) {
-    setEvents([]);
+      setEvents([]);
     }
     setCalendars(null);
     setError(null);
@@ -237,7 +237,7 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
       // Don't proceed if not authorized
       if (!isAuthorized) {
         console.log("Not authorized to refresh events");
-          return;
+        return;
       }
 
       // Clear any previous debounce timer
@@ -259,12 +259,12 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
             timeMax = validatedDates.timeMax;
 
             // Check if this is a duplicate request with the same parameters
-            const requestKey = `${calendarId}:${timeMin}:${timeMax}`;
+            const requestKey = `all-calendars:${timeMin}:${timeMax}`;
 
             if (
               !forceRefresh &&
               lastFetchParams.current &&
-              lastFetchParams.current.calendarId === calendarId &&
+              lastFetchParams.current.calendarId === "all-calendars" &&
               lastFetchParams.current.timeMin === timeMin &&
               lastFetchParams.current.timeMax === timeMax &&
               Date.now() - lastFetchParams.current.timestamp < CACHE_EXPIRY_MS
@@ -279,7 +279,7 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
             currentFetchRequest.current = requestKey;
 
             // If we're forcing refresh, don't use cache
-            const cacheKey = getCacheKey(calendarId, timeMin, timeMax);
+            const cacheKey = getCacheKey("all-calendars", timeMin, timeMax);
 
             let cachedEvents = null;
             if (!forceRefresh) {
@@ -300,9 +300,9 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
 
               // Store last fetch parameters
               lastFetchParams.current = {
-          calendarId,
-          timeMin,
-          timeMax,
+                calendarId: "all-calendars",
+                timeMin,
+                timeMax,
                 timestamp: Date.now(),
               };
 
@@ -311,7 +311,7 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
             }
 
             // If we got here, we need to fetch fresh data
-        setIsLoading(true);
+            setIsLoading(true);
 
             // Get access token from backend with retry logic
             console.log("Getting access token for events refresh");
@@ -345,56 +345,101 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
               );
             }
 
-            // Fetch events from Google Calendar API
+            // Get calendar list to ensure we fetch from all calendars
+            console.log("Getting auth status to fetch calendar IDs");
+            const authStatus = await getAccessToken();
+
+            // Get the list of calendars to fetch from
+            const calendarIds = authStatus.calendarIds || [
+              calendarId || "primary",
+            ];
             console.log(
-              `Fetching events for ${calendarId} from ${timeMin} to ${timeMax}`
+              `Fetching events from ${calendarIds.length} calendars: ${calendarIds.join(", ")}`
             );
 
-            const url = new URL(
-              `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
-                calendarId
-              )}/events`
-            );
+            // Fetch events from all calendars in parallel
+            const allEventsPromises = calendarIds.map(async (calId) => {
+              console.log(
+                `Fetching events for ${calId} from ${timeMin} to ${timeMax}`
+              );
 
-            url.searchParams.append("maxResults", maxResults.toString());
-            url.searchParams.append("timeMin", timeMin);
-            url.searchParams.append("timeMax", timeMax);
-            url.searchParams.append("singleEvents", "true");
-            url.searchParams.append("orderBy", "startTime");
-            url.searchParams.append("timeZone", localTimeZone);
+              const url = new URL(
+                `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events`
+              );
 
-            const response = await fetch(url.toString(), {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-              },
+              url.searchParams.append("maxResults", maxResults.toString());
+              url.searchParams.append("timeMin", timeMin);
+              url.searchParams.append("timeMax", timeMax);
+              url.searchParams.append("singleEvents", "true");
+              url.searchParams.append("orderBy", "startTime");
+              url.searchParams.append("timeZone", localTimeZone);
+
+              try {
+                const response = await fetch(url.toString(), {
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                  },
+                });
+
+                if (!response.ok) {
+                  console.error(
+                    `Error fetching events from calendar ${calId}: ${response.status} ${response.statusText}`
+                  );
+                  return [];
+                }
+
+                const data = await response.json();
+
+                // Try to get calendar information to add to events
+                try {
+                  const calResponse = await fetch(
+                    `https://www.googleapis.com/calendar/v3/users/me/calendarList/${encodeURIComponent(calId)}`,
+                    {
+                      headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                      },
+                    }
+                  );
+
+                  if (calResponse.ok) {
+                    const calData = await calResponse.json();
+                    // Add calendar information to each event
+                    return (data.items || []).map((event: any) => ({
+                      ...event,
+                      calendarTitle: calData.summary,
+                      calendarColor: calData.backgroundColor,
+                    }));
+                  }
+                } catch (calError) {
+                  console.error(
+                    `Error fetching calendar details for ${calId}:`,
+                    calError
+                  );
+                }
+
+                return data.items || [];
+              } catch (error) {
+                console.error(
+                  `Error fetching events from calendar ${calId}:`,
+                  error
+                );
+                return [];
+              }
             });
 
-            if (!response.ok) {
-              let errorText = await response.text();
-              console.error("Error response:", errorText);
+            // Wait for all calendar requests to complete
+            const allEventsArrays = await Promise.all(allEventsPromises);
 
-              // If it's an auth error, try to reconnect
-              if (response.status === 401) {
-                setError(
-                  new Error(
-                    "Authentication expired. Please reconnect to Google Calendar."
-                  )
-                );
+            // Combine all events into a single array and sort by start time
+            const combinedEvents = allEventsArrays.flat().sort((a, b) => {
+              const aStart = a.start.dateTime || a.start.date || "";
+              const bStart = b.start.dateTime || b.start.date || "";
+              return aStart.localeCompare(bStart);
+            });
 
-                // Reset auth state in Convex by calling revokeAuth
-                await revokeAuth();
-
-                throw new Error(
-                  `Authentication failed (401): Google Calendar token expired or invalid`
-                );
-        } else {
-                throw new Error(
-                  `Failed to fetch events: ${response.status} ${response.statusText}`
-                );
-              }
-            }
-
-            const data = await response.json();
+            console.log(
+              `Retrieved ${combinedEvents.length} events from ${calendarIds.length} calendars`
+            );
 
             // If this was canceled or a newer request came in, don't update state
             if (currentFetchRequest.current !== requestKey) {
@@ -406,18 +451,18 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
             }
 
             // Save to cache
-            saveToCache(cacheKey, data.items);
+            saveToCache(cacheKey, combinedEvents);
 
             // Only update state if events are different to avoid unnecessary rerenders
-            if (!isEqual(data.items, events)) {
-              setEvents(data.items || []);
+            if (!isEqual(combinedEvents, events)) {
+              setEvents(combinedEvents);
             }
 
             // Store last fetch parameters
             lastFetchParams.current = {
-          calendarId,
-          timeMin,
-          timeMax,
+              calendarId: "all-calendars",
+              timeMin,
+              timeMax,
               timestamp: Date.now(),
             };
 
@@ -647,12 +692,12 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
       }
     } catch (err: any) {
       console.error("Error connecting to Google Calendar:", err);
-        setError(
+      setError(
         new Error(err.message || "Failed to connect to Google Calendar")
-        );
-      } finally {
-        setIsLoading(false);
-      }
+      );
+    } finally {
+      setIsLoading(false);
+    }
   }, [getAuthUrl, exchangeCodeForTokens, isLoading]);
 
   // Initial events loading
@@ -684,7 +729,7 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
             const end = endOfMonth(now);
 
             await refreshEvents(
-              "primary",
+              undefined, // No need to specify calendar ID, it will use all calendars
               start.toISOString(),
               end.toISOString(),
               250, // maxResults

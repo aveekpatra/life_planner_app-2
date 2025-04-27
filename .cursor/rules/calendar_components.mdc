@@ -12,6 +12,7 @@ alwaysApply: false
 - [src/services/GoogleCalendarService.ts](mdc:src/services/GoogleCalendarService.ts): Service for Google Calendar API calls
 - [convex/events.ts](mdc:convex/events.ts): Backend for local calendar events
 - [convex/googleCalendarAuth.ts](mdc:convex/googleCalendarAuth.ts): Google Calendar authentication
+- [convex/googleCalendarEvents.ts](mdc:convex/googleCalendarEvents.ts): Backend for syncing Google Calendar events
 
 ## Calendar Features
 - Unified calendar shows both local and Google Calendar events
@@ -19,3 +20,13 @@ alwaysApply: false
 - Week view shows details with time information
 - Events are color-coded by category/source
 - All-day events are displayed separately from timed events
+
+## CalendarWidget Implementation
+- Uses React hooks for state management (useState, useEffect, useRef, useMemo)
+- Tab-based navigation between month and week views
+- Google Calendar authorization with connect/refresh capabilities
+- Efficient event fetching with date range optimization
+- Proper handling of all-day events with timezone considerations
+- Responsive layout for different screen sizes
+- Event grouping and sorting by type (all-day and timed events)
+- Optimized rendering to prevent redundant API calls

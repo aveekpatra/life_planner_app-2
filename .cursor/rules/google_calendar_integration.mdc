@@ -11,13 +11,15 @@ The app features a comprehensive Google Calendar integration to display and mana
 
 ### Backend
 - [convex/googleCalendarAuth.ts](mdc:convex/googleCalendarAuth.ts) - Stores and manages auth tokens
-- [convex/schema.ts](mdc:convex/schema.ts) - Defines `googleCalendarAuth` table structure
+- [convex/googleCalendarEvents.ts](mdc:convex/googleCalendarEvents.ts) - Syncs events from Google Calendar
+- [convex/schema.ts](mdc:convex/schema.ts) - Defines `googleCalendarAuth` and related tables
 
 ### Frontend
 - [src/hooks/useGoogleCalendar.ts](mdc:src/hooks/useGoogleCalendar.ts) - Custom hook managing auth and event fetching
 - [src/services/GoogleCalendarService.ts](mdc:src/services/GoogleCalendarService.ts) - Service for API interactions
 - [src/components/CalendarWidget.tsx](mdc:src/components/CalendarWidget.tsx) - Calendar UI with week/month views
 - [src/components/CalendarTimeline.tsx](mdc:src/components/CalendarTimeline.tsx) - Timeline visualization of events
+- [src/components/GoogleAuthCallback.tsx](mdc:src/components/GoogleAuthCallback.tsx) - Authentication callback handler
 
 ## Authentication Flow
 1. User authorizes with Google OAuth via popup window
@@ -27,20 +29,27 @@ The app features a comprehensive Google Calendar integration to display and mana
 
 ## Event Handling
 - Fetches events based on current view (week/month)
-- Caches events in localStorage for 5 minutes to reduce API calls
-- Displays Google Calendar events with proper color coding based on event/calendar colors
-- Supports viewing both all-day and timed events
+- Syncs events from all user calendars with proper color-coding
+- Displays Google Calendar events with proper calendar colors
+- Supports viewing both all-day and timed events with correct timezone handling
 - Uses date range tracking to avoid redundant API calls
+
+## All-Day Event Handling
+- Special handling for all-day events to address timezone issues
+- Correctly applies the exclusive end date semantics of Google Calendar
+- Properly displays multi-day events spanning across date boundaries
+- Shows all-day events at the top of each day view
 
 ## Optimizations
 - Uses `previousDateRange` ref to prevent duplicate refreshes of the same date range
-- Implements debounce pattern for frequent date changes
-- Handles state management carefully to avoid infinite render loops
-- Proper error handling for API limits and auth failures
+- Implements date validation to prevent fetching events for invalid date ranges
+- Limits event fetching to authorized users only
+- Properly handles loading and error states
+- Uses useMemo for calendar grid generation
 - Responsive design for different screen sizes
 
 ## State Management
 - Controls loading states to provide feedback during API operations
 - Maintains authorization state through Convex queries
+- Provides separate refresh mechanisms for calendar list and events
 - Processes and normalizes event data for consistent display
-- Provides user feedback during connection process
