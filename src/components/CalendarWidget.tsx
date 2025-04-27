@@ -152,6 +152,7 @@ export function CalendarWidget() {
     isAuthorized,
     connectToGoogleCalendar,
     refreshEvents,
+    disconnectFromGoogleCalendar,
   } = useGoogleCalendar();
 
   // Force reset the date if we detect an unreasonable future date (> 1 year from now)
@@ -452,8 +453,17 @@ export function CalendarWidget() {
         console.log("Calendar list refresh result:", result);
 
         if (result.success) {
-          // Then refresh events from all calendars
+          console.log(
+            `Successfully refreshed calendar list. Found ${result.calendarIds?.length || 0} calendars.`
+          );
+
+          // Then clear previous date range to force a full refresh
+          previousDateRange.current = "";
+
+          // Then refresh events from all calendars with force refresh flag
           handleRefreshGoogleEvents();
+        } else {
+          console.error("Failed to refresh calendar list:", result.message);
         }
       });
     } catch (error) {
@@ -579,6 +589,22 @@ export function CalendarWidget() {
                 className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`}
               />
               <span className="text-xs">Refresh Calendars</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                disconnectFromGoogleCalendar();
+                // Wait a short moment before reconnecting
+                setTimeout(() => {
+                  void connectToGoogleCalendar();
+                }, 500);
+              }}
+              disabled={isLoading}
+              className="flex items-center gap-1"
+            >
+              <RefreshCw className="h-3 w-3" />
+              <span className="text-xs">Reset Connection</span>
             </Button>
             <Button
               variant="ghost"

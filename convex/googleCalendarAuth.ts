@@ -43,6 +43,16 @@ export const saveAuthData = internalMutation({
       .unique();
 
     if (existingAuth) {
+      // Important: Only update calendarIds if they're provided and non-empty
+      const calendarIds =
+        args.calendarIds && args.calendarIds.length > 0
+          ? args.calendarIds
+          : existingAuth.calendarIds || ["primary"];
+
+      console.log(
+        `Saving ${calendarIds.length} calendar IDs: ${calendarIds.join(", ")}`
+      );
+
       // Update existing record
       return await ctx.db.patch(existingAuth._id, {
         isAuthorized: args.isAuthorized,
@@ -51,10 +61,20 @@ export const saveAuthData = internalMutation({
           ? args.refreshToken
           : existingAuth.refreshToken,
         tokenExpiry: args.tokenExpiry,
-        calendarIds: args.calendarIds,
+        calendarIds: calendarIds,
         updatedAt: now,
       });
     } else {
+      // Create new record with default primary calendar if no IDs provided
+      const calendarIds =
+        args.calendarIds && args.calendarIds.length > 0
+          ? args.calendarIds
+          : ["primary"];
+
+      console.log(
+        `Creating new auth record with ${calendarIds.length} calendar IDs: ${calendarIds.join(", ")}`
+      );
+
       // Create new record
       return await ctx.db.insert("googleCalendarAuth", {
         userId,
@@ -62,7 +82,7 @@ export const saveAuthData = internalMutation({
         accessToken: args.accessToken,
         refreshToken: args.refreshToken,
         tokenExpiry: args.tokenExpiry,
-        calendarIds: args.calendarIds || ["primary"],
+        calendarIds: calendarIds,
         createdAt: now,
         updatedAt: now,
       });
@@ -145,9 +165,10 @@ export const getAuthStatusInternal = internalQuery({
 });
 
 // Helper function to fetch calendar list
-async function fetchCalendarList(
-  accessToken: string
-): Promise<{ items: Array<{ id: string; summary: string }> }> {
+async function fetchCalendarList(accessToken: string): Promise<{
+  items: Array<{ id: string; summary: string; accessRole?: string }>;
+}> {
+  // Explicitly request all calendars including hidden ones with at least reader access
   const response = await fetch(
     "https://www.googleapis.com/calendar/v3/users/me/calendarList?showHidden=true&minAccessRole=reader",
     {
@@ -158,10 +179,29 @@ async function fetchCalendarList(
   );
 
   if (!response.ok) {
+    console.error(
+      `Calendar list fetch failed: ${response.status} ${response.statusText}`
+    );
+    const errorText = await response.text();
+    console.error(`Error details: ${errorText}`);
     throw new Error(`Failed to fetch calendars: ${response.statusText}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  console.log(
+    `Retrieved ${data.items?.length || 0} calendars from Google Calendar API`
+  );
+
+  // Log each calendar for debugging
+  if (data.items && data.items.length > 0) {
+    data.items.forEach((cal: any) => {
+      console.log(
+        `Calendar: ${cal.id} (${cal.summary}) - Access: ${cal.accessRole}`
+      );
+    });
+  }
+
+  return data;
 }
 
 // Exchange auth code for tokens
@@ -440,6 +480,7 @@ export const getAccessToken = action({
     accessToken?: string;
     tokenExpiry?: number;
     error?: string;
+    calendarIds?: string[];
   }> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -451,6 +492,7 @@ export const getAccessToken = action({
       isAuthorized: boolean;
       accessToken?: string;
       tokenExpiry?: number;
+      calendarIds?: string[];
     } = await ctx.runQuery(internal.googleCalendarAuth.getAuthStatusInternal);
 
     if (!authData.isAuthorized) {
@@ -464,16 +506,23 @@ export const getAccessToken = action({
       Date.now() > authData.tokenExpiry - 5 * 60 * 1000
     ) {
       console.log("Token expired or will expire soon, refreshing...");
-      return await ctx.runAction(
+      const refreshResult = await ctx.runAction(
         internal.googleCalendarAuth.refreshAccessTokenInternal
       );
+
+      // Always return calendar IDs with refreshed token
+      return {
+        ...refreshResult,
+        calendarIds: authData.calendarIds || ["primary"],
+      };
     }
 
-    // Return the current valid token
+    // Return the current valid token with calendar IDs
     return {
       success: true,
       accessToken: authData.accessToken,
       tokenExpiry: authData.tokenExpiry,
+      calendarIds: authData.calendarIds || ["primary"],
     };
   },
 });

@@ -179,6 +179,9 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
     api.googleCalendarAuth.exchangeCodeForTokens
   );
   const getAccessToken = useAction(api.googleCalendarAuth.getAccessToken);
+  const refreshCalendarList = useAction(
+    api.googleCalendarAuth.refreshCalendarList
+  );
 
   // Derive authorized state from the query result, not the raw query
   const isAuthorized = authStatusResult?.isAuthorized || false;
@@ -357,6 +360,38 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
               `Fetching events from ${calendarIds.length} calendars: ${calendarIds.join(", ")}`
             );
 
+            // If calendarIds is empty or only contains primary, try to refresh the calendar list
+            if (calendarIds.length <= 1) {
+              console.log(
+                "Only one calendar detected, trying to refresh calendar list"
+              );
+              try {
+                const refreshResult = await refreshCalendarList({});
+                if (
+                  refreshResult.success &&
+                  refreshResult.calendarIds &&
+                  refreshResult.calendarIds.length > 1
+                ) {
+                  console.log(
+                    `Calendar list refreshed, now have ${refreshResult.calendarIds.length} calendars`
+                  );
+                  const newStatus = await getAccessToken();
+                  if (
+                    newStatus.calendarIds &&
+                    newStatus.calendarIds.length > 1
+                  ) {
+                    console.log(
+                      `Using refreshed list of ${newStatus.calendarIds.length} calendars`
+                    );
+                    calendarIds.length = 0; // Clear the array
+                    calendarIds.push(...newStatus.calendarIds); // Add new calendar IDs
+                  }
+                }
+              } catch (refreshError) {
+                console.error("Error refreshing calendar list:", refreshError);
+              }
+            }
+
             // Fetch events from all calendars in parallel
             const allEventsPromises = calendarIds.map(async (calId) => {
               console.log(
@@ -484,7 +519,7 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
         }, DEBOUNCE_DELAY);
       });
     },
-    [isAuthorized, getAccessToken, events, revokeAuth]
+    [isAuthorized, getAccessToken, events, refreshCalendarList]
   );
 
   // Handle direct auth events
