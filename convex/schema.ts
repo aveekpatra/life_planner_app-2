@@ -82,6 +82,7 @@ const applicationTables = {
     accessToken: v.optional(v.string()),
     tokenExpiry: v.optional(v.number()),
     refreshToken: v.optional(v.string()),
+    calendarIds: v.optional(v.array(v.string())),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_user", ["userId"]),

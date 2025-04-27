@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   SidebarProvider,
@@ -13,10 +13,8 @@ import {
   Loader2,
   Calendar,
 } from "lucide-react";
-import { Separator } from "./ui/separator";
 import { CalendarTimeline } from "./CalendarTimeline";
 import { Button } from "./ui/button";
-import { cn } from "@/lib/utils";
 import { useGoogleCalendar } from "../hooks/useGoogleCalendar";
 import { useToast } from "../hooks/use-toast";
 import { AppSidebar } from "./AppSidebar";
@@ -29,6 +27,7 @@ interface MainLayoutProps {
 function ResponsiveContent({ children }: { children: React.ReactNode }) {
   const { state } = useSidebar();
   const isLeftSidebarCollapsed = state === "collapsed";
+  const connectionTestRunning = useRef(false);
 
   // Load initial timeline state from localStorage or default to true (visible)
   const [showTimeline, setShowTimeline] = React.useState(() => {
@@ -44,7 +43,6 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
   const {
     isLoading,
-    error,
     isAuthorized,
     connectToGoogleCalendar,
     disconnectFromGoogleCalendar,
@@ -63,6 +61,8 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
 
   // Handle Google Calendar connection
   const handleGoogleCalendarConnect = async () => {
+    if (isLoading) return; // Prevent multiple clicks while loading
+
     if (isAuthorized) {
       disconnectFromGoogleCalendar();
       toast({
@@ -71,15 +71,35 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
       });
     } else {
       try {
+        // Only run test if it's not already running
+        if (!connectionTestRunning.current) {
+          connectionTestRunning.current = true;
+          try {
+            const testEndpoint =
+              "https://clean-armadillo-885.convex.cloud/api/debug";
+            console.log("Testing Convex connection before auth...");
+            const testResponse = await fetch(testEndpoint);
+            console.log("Convex test response status:", testResponse.status);
+            const testData = await testResponse.json();
+            console.log("Convex env test:", testData.environment);
+          } catch (testErr) {
+            console.error("Convex connection test failed:", testErr);
+          } finally {
+            connectionTestRunning.current = false;
+          }
+        }
+
+        // Now try to connect to Google Calendar
         await connectToGoogleCalendar();
         toast({
           title: "Connected",
           description: "Successfully connected to Google Calendar",
         });
-      } catch (err) {
+      } catch (err: any) {
+        console.error("Google Calendar connection error:", err);
         toast({
-          title: "Error",
-          description: "Failed to connect to Google Calendar",
+          title: "Connection Error",
+          description: err.message || "Failed to connect to Google Calendar",
           variant: "destructive",
         });
       }
@@ -139,6 +159,48 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
                 : "Connect Google Calendar"}
             </span>
             {!isAuthorized && <ExternalLink className="h-3 w-3 ml-1" />}
+          </Button>
+
+          {/* Debug button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (!connectionTestRunning.current) {
+                connectionTestRunning.current = true;
+                const testEndpoint =
+                  "https://clean-armadillo-885.convex.cloud/api/debug";
+                console.log("Testing Convex connection...");
+                fetch(testEndpoint)
+                  .then((response) => {
+                    console.log(
+                      "Convex test response status:",
+                      response.status
+                    );
+                    return response.text();
+                  })
+                  .then((text) => {
+                    console.log("Convex test response:", text);
+                    toast({
+                      title: "Connection Test",
+                      description: "Check console for details",
+                    });
+                  })
+                  .catch((err) => {
+                    console.error("Convex test error:", err);
+                    toast({
+                      title: "Connection Error",
+                      description: err.message,
+                      variant: "destructive",
+                    });
+                  })
+                  .finally(() => {
+                    connectionTestRunning.current = false;
+                  });
+              }
+            }}
+          >
+            Test Connection
           </Button>
 
           <Button

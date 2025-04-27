@@ -197,6 +197,7 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
 
     // Fetch all calendars for the given day
     refreshEvents(
+      "primary", // calendarId should be first parameter
       periodStart.toISOString(), // timeMin
       periodEnd.toISOString(), // timeMax
       250, // maxResults
@@ -334,6 +335,7 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
               const periodStart = startOfDay(selectedDate);
               const periodEnd = endOfDay(selectedDate);
               refreshEvents(
+                "primary", // calendarId should be first parameter
                 periodStart.toISOString(), // timeMin
                 periodEnd.toISOString(), // timeMax
                 250, // maxResults as number - increased from 100 to match CalendarWidget

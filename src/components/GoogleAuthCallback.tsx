@@ -24,10 +24,10 @@ export function GoogleAuthCallback() {
     if (window.opener && !window.opener.closed) {
       try {
         // Attempt to make the code available to the opener window
-        // This helps with cross-origin issues that might occur with direct polling
         console.log("Attempting to communicate with opener window");
 
         // Use postMessage for secure cross-origin communication
+        // Ensure we're sending the proper format expected by useGoogleCalendar
         window.opener.postMessage(
           {
             type: "GOOGLE_AUTH_CALLBACK",
@@ -36,6 +36,11 @@ export function GoogleAuthCallback() {
           },
           window.location.origin
         );
+
+        // Also send the simplified format for backward compatibility
+        if (code) {
+          window.opener.postMessage({ code }, window.location.origin);
+        }
 
         console.log("Message posted to opener");
 

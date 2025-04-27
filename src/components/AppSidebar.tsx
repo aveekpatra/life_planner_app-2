@@ -1,5 +1,5 @@
 import React from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Sidebar,
   SidebarHeader,
@@ -28,7 +28,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { cn } from "@/lib/utils";
 import { useAction } from "convex/react";
 import {
   DropdownMenu,
@@ -77,7 +76,6 @@ function CollapsibleFooter() {
   const isCollapsed = state === "collapsed";
   const user = useQuery(api.auth.loggedInUser);
   const signOut = useAction(api.auth.signOut);
-  const navigate = useNavigate();
 
   const handleSignOut = () => {
     void (async () => {

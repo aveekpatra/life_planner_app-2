@@ -9,12 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "../components/ui/card";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "../components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
@@ -172,10 +167,11 @@ export function QuickCapture() {
         title: "Success",
         description: "Item created successfully!",
       });
-    } catch (error) {
+    } catch (err) {
+      console.error("Failed to create item:", err);
       toast({
         title: "Error",
-        description: "Failed to create item",
+        description: `Failed to create item: ${err instanceof Error ? err.message : "Unknown error"}`,
         variant: "destructive",
       });
     }
@@ -190,20 +186,26 @@ export function QuickCapture() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleSubmit(e);
+          }}
+          className="space-y-6"
+        >
           <Tabs
             value={type}
             onValueChange={(value) => setType(value as CaptureType)}
             className="w-full"
           >
-            <TabsList className="grid grid-cols-5 w-full">
+            <TabsList className="grid grid-cols-5 w-full h-12 bg-muted">
               {(Object.keys(typeConfig) as CaptureType[]).map((t) => {
                 const Icon = typeConfig[t].icon;
                 return (
                   <TabsTrigger
                     key={t}
                     value={t}
-                    className="flex items-center gap-2"
+                    className="flex items-center justify-center gap-2 h-full py-2"
                   >
                     <Icon className="h-4 w-4" />
                     <span className="hidden sm:inline">

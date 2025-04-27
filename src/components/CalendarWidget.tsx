@@ -1,13 +1,13 @@
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import { CalendarDays, CalendarRange, RefreshCw } from "lucide-react";
 import { useGoogleCalendar } from "../hooks/useGoogleCalendar";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { GoogleCalendarEvent } from "../services/GoogleCalendarService";
-import { Doc, Id } from "../../convex/_generated/dataModel";
+import { Doc } from "../../convex/_generated/dataModel";
 import {
   format,
   getDaysInMonth,
@@ -20,7 +20,6 @@ import {
   endOfWeek,
   isSameDay,
   isToday,
-  isFuture,
   differenceInMinutes,
   startOfMonth,
   endOfMonth,
@@ -39,20 +38,6 @@ const getWeekRange = (date: Date) => {
 
 // Day names for header
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
 
 type CalendarView = "month" | "week";
 
@@ -144,24 +129,16 @@ const convertLocalEvent = (event: Doc<"events">): CalendarEventBase => {
 };
 
 export function CalendarWidget() {
-  const localEventsData = useQuery(api.events.list) || [];
+  const rawLocalEvents = useQuery(api.events.list);
 
-  // Debug the current date
-  const realToday = new Date();
-  // console.log(`Real today's date: ${realToday.toISOString()}`);
-  // console.log(`Current year should be: ${realToday.getFullYear()}`);
-  // console.log(`Current month should be: ${realToday.getMonth()}`);
+  // Use useMemo to properly handle the events data in dependencies
+  const localEventsData = useMemo(() => rawLocalEvents || [], [rawLocalEvents]);
 
   // Force the correct date to ensure we're not using a future date
   const today = new Date();
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentDate, setCurrentDate] = useState(today);
-
-  // Log the initialized state to debug
-  // console.log(
-  //   `CalendarWidget initialized with year: ${currentYear}, month: ${currentMonth}`
-  // );
 
   const [view, setView] = useState<CalendarView>("week");
   const [mergedEvents, setMergedEvents] = useState<CalendarEventBase[]>([]);
@@ -187,9 +164,6 @@ export function CalendarWidget() {
       (currentYear === oneYearFromNow.getFullYear() &&
         currentMonth > oneYearFromNow.getMonth())
     ) {
-      // console.log(
-      //   `Correcting unreasonable future date: ${currentYear}-${currentMonth + 1} to ${realNow.getFullYear()}-${realNow.getMonth() + 1}`
-      // );
       setCurrentYear(realNow.getFullYear());
       setCurrentMonth(realNow.getMonth());
       setCurrentDate(realNow);
@@ -473,9 +447,6 @@ export function CalendarWidget() {
   const calendarDays = generateCalendarDays();
   const weekDays = generateWeekDays();
 
-  // Determine the number of rows needed (either 5 or 6 weeks)
-  const calendarRows = Math.ceil(calendarDays.length / 7);
-
   // Get the date range for the header display
   const getHeaderDateDisplay = () => {
     if (view === "month") {
@@ -683,7 +654,6 @@ export function CalendarWidget() {
                 currentYear === today.getFullYear();
 
               const eventsForDay = day !== null ? getEventsForDate(day) : [];
-              const hasEvents = eventsForDay.length > 0;
 
               // Sort events: all-day first, then by start time
               const sortedEvents = [...eventsForDay].sort((a, b) => {
