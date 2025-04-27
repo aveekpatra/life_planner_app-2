@@ -80,8 +80,9 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
             console.log("Testing Convex connection before auth...");
             const testResponse = await fetch(testEndpoint);
             console.log("Convex test response status:", testResponse.status);
-            const testData = await testResponse.json();
-            console.log("Convex env test:", testData.environment);
+            // Just get the text response instead of trying to parse JSON
+            const responseText = await testResponse.text();
+            console.log("Convex response text:", responseText);
           } catch (testErr) {
             console.error("Convex connection test failed:", testErr);
           } finally {
