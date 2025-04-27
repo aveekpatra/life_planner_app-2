@@ -1,0 +1,23 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Application Data Flow
+
+## Data Flow Patterns
+- React components use the `useQuery` hook from Convex to fetch data
+- Data mutations use the `useMutation` hook
+- Google Calendar integration uses both Convex for auth and direct API calls
+
+## Entity Structure
+- Tasks: To-do items with status, priority and projects
+- Events: Calendar events with start/end times
+- Notes: Text notes for quick capture
+- Projects: Organizational units for tasks and notes
+- Bookmarks: Saved links and references
+
+## State Management
+- Database state is managed through Convex
+- UI state is managed with React hooks (useState, useEffect)
+- External services like Google Calendar have dedicated hooks and services

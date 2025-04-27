@@ -1,0 +1,25 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# UI Components
+
+## Component Library
+This project uses a custom UI component library based on shadcn/ui:
+- Button, Input, Select and other form controls
+- Tabs, Dialog, Popover for navigation and modals
+- Card, Badge for display elements
+- Toast for notifications
+
+## Component Usage Pattern
+- UI components are imported from `./ui/` directory
+- Components follow a consistent styling pattern
+- Most components accept standard HTML attributes plus custom props
+- Dark mode support is built into components
+
+## Key UI Components
+- Tabs: Used for view switching (month/week in calendar)
+- Cards: Container for widget contents
+- Badges: Used for status indicators and tags
+- Buttons: Various sizes and styles for actions

@@ -1,0 +1,30 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Project Structure
+
+## Main Directories
+- `src/`: Main application code
+  - `components/`: React components including widgets
+  - `hooks/`: Custom React hooks
+  - `services/`: API and external service integrations
+  - `pages/`: Page components
+  - `utils/`: Utility functions
+  - `lib/`: Library configurations and initializations
+- `convex/`: Convex backend code
+  - Database schema
+  - API endpoints (queries, mutations, actions)
+  - Authentication logic
+
+## Key Files
+- [src/main.tsx](mdc:src/main.tsx): Application entry point
+- [convex/schema.ts](mdc:convex/schema.ts): Database schema
+- [src/components/MainLayout.tsx](mdc:src/components/MainLayout.tsx): Main application layout
+- [src/hooks/useGoogleCalendar.ts](mdc:src/hooks/useGoogleCalendar.ts): Google Calendar integration hook
+
+## Patterns
+- Widget components (`*Widget.tsx`) display specific functionality sections
+- Convex functions are organized by entity (tasks.ts, events.ts, etc.)
+- UI components are in the src/components/ui directory

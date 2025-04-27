@@ -1,0 +1,36 @@
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Circular background with gradient -->
+  <circle cx="50" cy="50" r="45" fill="url(#zen_gradient)" />
+  
+  <!-- Zen circle (Enso) -->
+  <path 
+    d="M75 50C75 63.8071 63.8071 75 50 75C36.1929 75 25 63.8071 25 50C25 36.1929 36.1929 25 50 25" 
+    stroke="white" 
+    stroke-width="3" 
+    stroke-linecap="round"
+  />
+  
+  <!-- Minimal leaf -->
+  <path 
+    d="M50 40C55 45 60 45 65 40" 
+    stroke="white" 
+    stroke-width="2" 
+    stroke-linecap="round"
+  />
+  
+  <!-- Water ripple -->
+  <path 
+    d="M35 60C40 58 45 58 50 60C55 62 60 62 65 60" 
+    stroke="white" 
+    stroke-width="2" 
+    stroke-linecap="round"
+  />
+  
+  <!-- Gradient definition -->
+  <defs>
+    <linearGradient id="zen_gradient" x1="10" y1="10" x2="90" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+  </defs>
+</svg> 

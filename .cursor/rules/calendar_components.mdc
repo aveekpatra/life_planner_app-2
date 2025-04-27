@@ -1,0 +1,21 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Calendar Components
+
+## Calendar Related Files
+- [src/components/CalendarWidget.tsx](mdc:src/components/CalendarWidget.tsx): Main calendar component with month/week views
+- [src/components/CalendarTimeline.tsx](mdc:src/components/CalendarTimeline.tsx): Timeline view of calendar events
+- [src/hooks/useGoogleCalendar.ts](mdc:src/hooks/useGoogleCalendar.ts): Hook for Google Calendar integration
+- [src/services/GoogleCalendarService.ts](mdc:src/services/GoogleCalendarService.ts): Service for Google Calendar API calls
+- [convex/events.ts](mdc:convex/events.ts): Backend for local calendar events
+- [convex/googleCalendarAuth.ts](mdc:convex/googleCalendarAuth.ts): Google Calendar authentication
+
+## Calendar Features
+- Unified calendar shows both local and Google Calendar events
+- Month view displays events in a traditional grid
+- Week view shows details with time information
+- Events are color-coded by category/source
+- All-day events are displayed separately from timed events

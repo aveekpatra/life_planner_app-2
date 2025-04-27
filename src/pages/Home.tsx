@@ -42,7 +42,7 @@ function Content() {
             <CardContent className="pt-6 space-y-6">
               <div className="space-y-4">
                 <h1 className="text-3xl font-medium text-foreground">
-                  Welcome to Life Planner
+                  Welcome to Zenify
                 </h1>
                 <p className="text-muted-foreground max-w-md mx-auto">
                   Sign in to start organizing your life with an elegant, modern

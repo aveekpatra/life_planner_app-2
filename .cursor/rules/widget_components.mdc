@@ -1,0 +1,28 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Widget Components
+
+## Widget Pattern
+All widgets follow a similar pattern:
+- Fetch data using Convex `useQuery`
+- Provide interactions through Convex `useMutation`
+- Maintain local UI state with React hooks
+- Support both read and write operations
+
+## Main Widgets
+- [src/components/CalendarWidget.tsx](mdc:src/components/CalendarWidget.tsx): Calendar with month/week views
+- [src/components/TasksWidget.tsx](mdc:src/components/TasksWidget.tsx): Task management
+- [src/components/NotesWidget.tsx](mdc:src/components/NotesWidget.tsx): Notes capture and display
+- [src/components/ProjectsWidget.tsx](mdc:src/components/ProjectsWidget.tsx): Project management
+- [src/components/QuickCapture.tsx](mdc:src/components/QuickCapture.tsx): Quick input for tasks and notes
+- [src/components/TodoWidget.tsx](mdc:src/components/TodoWidget.tsx): Todo list management
+
+## Integration Pattern
+Widgets combine to form a complete life planning application with:
+- Task management
+- Calendar events (both local and Google Calendar)
+- Notes
+- Projects organization

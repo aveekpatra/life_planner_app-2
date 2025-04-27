@@ -1,168 +1,28 @@
-import React, { useState } from "react";
+import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
-  Sidebar,
   SidebarProvider,
-  SidebarHeader,
-  SidebarContent,
-  SidebarFooter,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarGroup,
-  SidebarGroupLabel,
   SidebarTrigger,
   SidebarInset,
-  SidebarRail,
   useSidebar,
 } from "./ui/sidebar";
 import {
-  CheckSquare,
-  LayoutDashboard,
-  Calendar,
-  FileText,
-  Settings,
-  Bookmark,
-  User,
   CalendarClock,
   ExternalLink,
   Check,
   Loader2,
-  Inbox,
-  LogOut,
-  ChevronUp,
-  MoreVertical,
+  Calendar,
 } from "lucide-react";
-import { SignOutButton } from "../SignOutButton";
-import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
-import { useQuery } from "convex/react";
-import { api } from "../../convex/_generated/api";
 import { Separator } from "./ui/separator";
 import { CalendarTimeline } from "./CalendarTimeline";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
 import { useGoogleCalendar } from "../hooks/useGoogleCalendar";
 import { useToast } from "../hooks/use-toast";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
-import { useConvexAuth, useAction } from "convex/react";
+import { AppSidebar } from "./AppSidebar";
 
 interface MainLayoutProps {
   children: React.ReactNode;
-}
-
-// Helper component for the sidebar header to properly handle collapsing
-function CollapsibleHeader() {
-  const { state } = useSidebar();
-  const isCollapsed = state === "collapsed";
-  const navigate = useNavigate();
-
-  return (
-    <SidebarHeader className="flex items-center px-4 py-6">
-      <div
-        className={cn(
-          "flex-1 transition-opacity duration-200 cursor-pointer",
-          isCollapsed ? "opacity-0" : "opacity-100"
-        )}
-        onClick={() => void navigate("/")}
-      >
-        <h1 className="text-lg font-medium tracking-tight whitespace-nowrap">
-          Life Planner
-        </h1>
-      </div>
-    </SidebarHeader>
-  );
-}
-
-// Helper component for the sidebar footer to properly handle collapsing
-function CollapsibleFooter() {
-  const { state } = useSidebar();
-  const isCollapsed = state === "collapsed";
-  const user = useQuery(api.auth.loggedInUser);
-  const signOut = useAction(api.auth.signOut);
-  const navigate = useNavigate();
-
-  const handleSignOut = () => {
-    void (async () => {
-      await signOut();
-      window.location.reload();
-    })();
-  };
-
-  const handleProfileClick = () => {
-    // Navigate to profile page or open profile modal
-    // console.log("Profile clicked");
-  };
-
-  const handleSettingsClick = () => {
-    // Navigate to settings page or open settings modal
-    // console.log("Settings clicked");
-  };
-
-  return (
-    <SidebarFooter className="p-4">
-      <div className="flex items-center justify-center w-full">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <div className="flex items-center gap-2 cursor-pointer p-2 rounded-md hover:bg-muted w-full justify-center">
-              <Avatar className="h-8 w-8 shrink-0">
-                <AvatarImage src={user?.image} />
-                <AvatarFallback>{user?.name?.[0] || "U"}</AvatarFallback>
-              </Avatar>
-
-              <div
-                className={cn(
-                  "text-sm font-medium truncate transition-opacity duration-200",
-                  isCollapsed ? "hidden" : "block"
-                )}
-              >
-                {user?.name || "User"}
-              </div>
-
-              <MoreVertical
-                className={cn(
-                  "h-4 w-4 text-muted-foreground",
-                  isCollapsed ? "hidden" : "block"
-                )}
-              />
-            </div>
-          </DropdownMenuTrigger>
-
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-
-            <DropdownMenuItem onClick={handleProfileClick}>
-              <User className="mr-2 h-4 w-4" />
-              <span>Profile</span>
-            </DropdownMenuItem>
-
-            <DropdownMenuItem onClick={handleSettingsClick}>
-              <Settings className="mr-2 h-4 w-4" />
-              <span>Settings</span>
-            </DropdownMenuItem>
-
-            <DropdownMenuSeparator />
-
-            <DropdownMenuItem
-              onClick={() => {
-                void handleSignOut();
-              }}
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              <span>Log out</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </SidebarFooter>
-  );
 }
 
 // Responsive content that adjusts to both sidebars
@@ -249,8 +109,11 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-10 flex items-center justify-between p-4 backdrop-blur-sm bg-background/90 border-b">
         <div className="flex items-center gap-2">
           <SidebarTrigger />
-          <Separator orientation="vertical" className="h-4 mx-2" />
-          <h2 className="text-lg font-medium tracking-tight">Life Planner</h2>
+          {/* <Separator orientation="vertical" className="h-4 mx-2" />
+          <div className="flex items-center space-x-2">
+            <img src="/logo.svg" alt="Zenify Logo" className="h-5 w-5" />
+            <h2 className="text-lg font-medium tracking-tight">Zenify</h2>
+          </div> */}
         </div>
 
         <div className="flex items-center gap-2">
@@ -326,47 +189,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     else setActiveItem("tasks");
   }, [location.pathname]);
 
-  // Navigation items for the sidebar
-  const navItems = [
-    {
-      id: "inbox",
-      label: "Inbox",
-      icon: <Inbox className="h-4 w-4" />,
-      path: "/",
-    },
-    {
-      id: "tasks",
-      label: "Tasks",
-      icon: <CheckSquare className="h-4 w-4" />,
-      path: "/tasks",
-    },
-    {
-      id: "projects",
-      label: "Projects",
-      icon: <LayoutDashboard className="h-4 w-4" />,
-      path: "/projects",
-    },
-    {
-      id: "calendar",
-      label: "Calendar",
-      icon: <Calendar className="h-4 w-4" />,
-      path: "/calendar",
-    },
-    {
-      id: "notes",
-      label: "Notes",
-      icon: <FileText className="h-4 w-4" />,
-      path: "/notes",
-    },
-    {
-      id: "bookmarks",
-      label: "Bookmarks",
-      icon: <Bookmark className="h-4 w-4" />,
-      path: "/bookmarks",
-    },
-  ];
-
-  const handleNavigation = (item: (typeof navItems)[0]) => {
+  const handleNavigation = (item: { id: string; path: string }) => {
     setActiveItem(item.id);
     void navigate(item.path);
   };
@@ -374,39 +197,8 @@ export function MainLayout({ children }: MainLayoutProps) {
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full">
-        {/* Sidebar */}
-        <Sidebar variant="sidebar" collapsible="icon">
-          <CollapsibleHeader />
-
-          <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupLabel>Navigation</SidebarGroupLabel>
-              <SidebarMenu>
-                {navItems.map((item) => (
-                  <SidebarMenuItem key={item.id}>
-                    <SidebarMenuButton
-                      isActive={activeItem === item.id}
-                      onClick={() => handleNavigation(item)}
-                      tooltip={item.label}
-                      className="rounded-md flex justify-center items-center py-3"
-                    >
-                      <div className="flex items-center justify-center w-5">
-                        {React.cloneElement(item.icon, {
-                          className: "h-5 w-5",
-                        })}
-                      </div>
-                      <span className="ml-3 text-base">{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroup>
-          </SidebarContent>
-
-          <CollapsibleFooter />
-
-          <SidebarRail />
-        </Sidebar>
+        {/* Use the AppSidebar component */}
+        <AppSidebar activeItem={activeItem} onNavigate={handleNavigation} />
 
         {/* Main content with responsive behavior */}
         <ResponsiveContent>{children}</ResponsiveContent>
