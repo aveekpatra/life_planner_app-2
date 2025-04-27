@@ -6,17 +6,17 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 
 // Create a simplified type matching the events schema for better TypeScript support
-type Event = {
+interface Event {
   _id: string;
   title: string;
   startDate: number;
   endDate: number;
-  description?: string;
-  location?: string;
-  category?: string;
+  description: string;
+  location: string;
+  category: string;
   isAllDay: boolean;
-  color?: string;
-};
+  color: string;
+}
 
 // Date utility functions
 const formatDate = (date: Date): string => {
@@ -130,6 +130,7 @@ const convertGoogleEvent = (event: GoogleCalendarEvent): Event => {
     location: event.location || "",
     isAllDay: !event.start.dateTime,
     color: color,
+    category: (event as any).calendarTitle || "",
   };
 };
 
@@ -142,6 +143,8 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
   const hasInitiallyLoaded = useRef(false);
   const [error, setError] = useState<Error | null>(null);
+  const previousDateRange = useRef("");
+  const isFetchingRef = useRef(false);
 
   const {
     isLoading: isLoadingGoogle,
@@ -150,6 +153,7 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
     connectToGoogleCalendar,
     refreshEvents,
     error: googleError,
+    isDebouncing,
   } = useGoogleCalendar();
 
   // Navigate to previous/next day
@@ -168,7 +172,11 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
         const convertedEvents = googleEvents.map(convertGoogleEvent);
         // Sort by start time for consistency
         convertedEvents.sort((a, b) => a.startDate - b.startDate);
-        setEvents(convertedEvents);
+
+        // Only update if the data has actually changed
+        if (JSON.stringify(convertedEvents) !== JSON.stringify(events)) {
+          setEvents(convertedEvents);
+        }
       } catch (err) {
         console.error("Error converting events:", err);
         setError(
@@ -176,9 +184,11 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
         );
         setEvents([]); // Clear events on conversion error
       }
-    } else {
+    } else if (events.length > 0) {
+      // Only clear events if we actually have some (avoids unnecessary rerenders)
       setEvents([]);
     }
+
     // Update loading state from the Google hook
     setIsLoadingEvents(isLoadingGoogle);
 
@@ -186,24 +196,38 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
     if (googleError) {
       setError(googleError);
     }
-  }, [googleEvents, isLoadingGoogle, isAuthorized, googleError]);
+  }, [googleEvents, isLoadingGoogle, isAuthorized, googleError, events]);
 
   // Fetch Google Calendar events when the selected date changes or auth status changes
   useEffect(() => {
-    // Don't fetch if not authorized
-    if (!isAuthorized) {
+    // Don't fetch if not authorized or already fetching
+    if (!isAuthorized || isFetchingRef.current || isDebouncing) {
       setIsLoadingEvents(false);
       return;
     }
 
-    // Set loading state immediately
-    setIsLoadingEvents(true);
-    setError(null);
-
     const periodStart = startOfDay(selectedDate);
     const periodEnd = endOfDay(selectedDate);
 
+    // Create a date range key to prevent duplicate fetches
+    const dateRangeKey = `${periodStart.toISOString()}-${periodEnd.toISOString()}`;
+
+    // Skip if this is the same range we just fetched
+    if (
+      previousDateRange.current === dateRangeKey &&
+      hasInitiallyLoaded.current
+    ) {
+      console.log("Skipping fetch for same date range:", dateRangeKey);
+      return;
+    }
+
     console.log(`Fetching events for ${formatDate(selectedDate)}`);
+
+    // Update state and refs
+    setIsLoadingEvents(true);
+    setError(null);
+    previousDateRange.current = dateRangeKey;
+    isFetchingRef.current = true;
 
     // Fetch all calendars for the given day
     refreshEvents(
@@ -224,8 +248,11 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
         );
         setEvents([]); // Clear events on fetch error
         setIsLoadingEvents(false); // Ensure loading stops on error
+      })
+      .finally(() => {
+        isFetchingRef.current = false;
       });
-  }, [isAuthorized, refreshEvents, selectedDate]);
+  }, [isAuthorized, refreshEvents, selectedDate, isDebouncing]);
 
   // Filter events for the selected day
   const filteredEvents = useMemo(() => {
@@ -347,6 +374,8 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
             variant="ghost"
             size="sm"
             onClick={() => {
+              if (isLoadingEvents || isDebouncing) return;
+
               setIsLoadingEvents(true);
               setError(null);
               const periodStart = startOfDay(selectedDate);
@@ -366,7 +395,7 @@ export function CalendarTimeline({ onClose }: { onClose: () => void }) {
                 setIsLoadingEvents(false);
               });
             }}
-            disabled={isLoadingEvents}
+            disabled={isLoadingEvents || isDebouncing}
             className="flex items-center gap-1"
           >
             <RefreshCw

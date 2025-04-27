@@ -149,7 +149,7 @@ async function fetchCalendarList(
   accessToken: string
 ): Promise<{ items: Array<{ id: string; summary: string }> }> {
   const response = await fetch(
-    "https://www.googleapis.com/calendar/v3/users/me/calendarList",
+    "https://www.googleapis.com/calendar/v3/users/me/calendarList?showHidden=true&minAccessRole=reader",
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -272,9 +272,22 @@ export const exchangeCodeForTokens = action({
           calendars.items.length
         );
 
-        const calendarIds = calendars.items.map(
-          (cal: { id: string }) => cal.id
+        // Log calendars for debugging
+        console.log(
+          "Calendar list:",
+          calendars.items.map((cal) => `${cal.id} (${cal.summary})`)
         );
+
+        // Include all calendars the user has at least read access to
+        const calendarIds = calendars.items
+          .filter(
+            (cal: any) =>
+              cal.accessRole &&
+              ["owner", "writer", "reader"].includes(cal.accessRole)
+          )
+          .map((cal: { id: string }) => cal.id);
+
+        console.log("Final calendar IDs to save:", calendarIds);
 
         // Update with calendar IDs
         console.log("exchangeCodeForTokens: Updating with calendar IDs...");
@@ -402,7 +415,14 @@ export const refreshAccessToken = action({
     tokenExpiry: v.optional(v.number()),
     error: v.optional(v.string()),
   }),
-  handler: async (ctx) => {
+  handler: async (
+    ctx
+  ): Promise<{
+    success: boolean;
+    accessToken?: string;
+    tokenExpiry?: number;
+    error?: string;
+  }> => {
     return await ctx.runAction(
       internal.googleCalendarAuth.refreshAccessTokenInternal,
       {}
@@ -524,6 +544,88 @@ export const revokeAuth = mutation({
         tokenExpiry: undefined,
         updatedAt: Date.now(),
       });
+    }
+  },
+});
+
+// Public action to refresh the user's calendar list
+export const refreshCalendarList = action({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get the current auth data
+    const authData = await ctx.runQuery(
+      internal.googleCalendarAuth.getAuthStatusInternal
+    );
+
+    if (!authData.isAuthorized || !authData.accessToken) {
+      return {
+        success: false,
+        message: "Not authorized with Google Calendar",
+      };
+    }
+
+    try {
+      // Get a fresh access token
+      const tokenResult = await ctx.runAction(
+        internal.googleCalendarAuth.refreshAccessTokenInternal
+      );
+
+      if (!tokenResult.success || !tokenResult.accessToken) {
+        return {
+          success: false,
+          message: "Failed to refresh access token",
+        };
+      }
+
+      // Fetch the calendar list with the fresh token
+      console.log("refreshCalendarList: Fetching calendar list...");
+      const calendars = await fetchCalendarList(tokenResult.accessToken);
+      console.log(
+        "refreshCalendarList: Retrieved calendars:",
+        calendars.items.length
+      );
+
+      // Log calendars for debugging
+      console.log(
+        "Calendar list:",
+        calendars.items.map(
+          (cal: any) => `${cal.id} (${cal.summary}) - access: ${cal.accessRole}`
+        )
+      );
+
+      // Include all calendars the user has at least read access to
+      const calendarIds = calendars.items
+        .filter(
+          (cal: any) =>
+            cal.accessRole &&
+            ["owner", "writer", "reader"].includes(cal.accessRole)
+        )
+        .map((cal: { id: string }) => cal.id);
+
+      console.log("Final calendar IDs to save:", calendarIds);
+
+      // Update calendar IDs in the database
+      await ctx.runMutation(internal.googleCalendarAuth.saveAuthData, {
+        isAuthorized: true,
+        calendarIds: calendarIds,
+      });
+
+      return {
+        success: true,
+        message: `Found ${calendarIds.length} calendars`,
+        calendarIds,
+      };
+    } catch (error: any) {
+      console.error("Error refreshing calendar list:", error);
+      return {
+        success: false,
+        message: error.message || "Unknown error refreshing calendar list",
+      };
     }
   },
 });

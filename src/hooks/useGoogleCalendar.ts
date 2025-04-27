@@ -26,11 +26,18 @@ interface UseGoogleCalendarReturn {
     forceRefresh?: boolean
   ) => Promise<void>;
   clearError: () => void;
+  isDebouncing: boolean;
 }
 
 // Cache management for Google Calendar events
 const CACHE_KEY_PREFIX = "google_calendar_events_";
 const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes - reduced from 10 minutes for fresher data
+const DEBOUNCE_DELAY = 500; // 500ms debounce for event fetching
+
+// Helper function to do deep comparison of arrays or objects
+const isEqual = (a: any, b: any): boolean => {
+  return JSON.stringify(a) === JSON.stringify(b);
+};
 
 // Get a cache key for a specific time range
 const getCacheKey = (calendarId: string, timeMin: string, timeMax: string) => {
@@ -80,16 +87,82 @@ const getFromCache = (key: string): GoogleCalendarEvent[] | null => {
   }
 };
 
+// Helper function to validate and normalize dates
+const validateAndNormalizeDates = (timeMin?: string, timeMax?: string) => {
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth();
+
+  // Default to current month if no time range specified
+  if (!timeMin || !timeMax) {
+    // Use current date, not future date
+    const now = new Date();
+    const monthStart = startOfMonth(now);
+    const monthEnd = endOfMonth(now);
+
+    return {
+      timeMin: monthStart.toISOString(),
+      timeMax: monthEnd.toISOString(),
+    };
+  }
+
+  // Validate provided dates
+  try {
+    const minDate = new Date(timeMin);
+    const maxDate = new Date(timeMax);
+
+    // Check for unreasonable dates (future years)
+    if (
+      minDate.getFullYear() > currentYear ||
+      maxDate.getFullYear() > currentYear
+    ) {
+      console.warn(
+        `Detected future date range: ${timeMin} to ${timeMax}, using current month instead`
+      );
+
+      const now = new Date();
+      const monthStart = startOfMonth(now);
+      const monthEnd = endOfMonth(now);
+
+      return {
+        timeMin: monthStart.toISOString(),
+        timeMax: monthEnd.toISOString(),
+      };
+    }
+
+    // If dates are valid, return them unchanged
+    return { timeMin, timeMax };
+  } catch (error) {
+    // If there's any parsing error, default to current month
+    console.warn("Error parsing dates, using current month instead");
+    const now = new Date();
+    const monthStart = startOfMonth(now);
+    const monthEnd = endOfMonth(now);
+
+    return {
+      timeMin: monthStart.toISOString(),
+      timeMax: monthEnd.toISOString(),
+    };
+  }
+};
+
 export function useGoogleCalendar(): UseGoogleCalendarReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [events, setEvents] = useState<GoogleCalendarEvent[]>([]);
   const [calendars, setCalendars] = useState<GoogleCalendarList | null>(null);
+  const [isDebouncing, setIsDebouncing] = useState(false);
 
   // Refs for tracking state and preventing unnecessary rerenders
   const eventsInitialized = useRef(false);
   const hasAttemptedInitialLoad = useRef(false);
   const currentFetchRequest = useRef<string | null>(null);
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+  const lastFetchParams = useRef<{
+    calendarId: string;
+    timeMin: string;
+    timeMax: string;
+    timestamp: number;
+  } | null>(null);
 
   // Function to clear error state
   const clearError = useCallback(() => {
@@ -113,7 +186,7 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
   // Clear error when auth status changes
   useEffect(() => {
     if (error && !isAuthorized) {
-      setError(null);
+    setError(null);
     }
   }, [isAuthorized, error]);
 
@@ -129,7 +202,9 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
       });
 
     // Clear local state
+    if (events.length > 0) {
     setEvents([]);
+    }
     setCalendars(null);
     setError(null);
     eventsInitialized.current = false;
@@ -141,7 +216,14 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
         localStorage.removeItem(key);
       }
     });
-  }, [revokeAuth]);
+
+    // Clear any pending debounce timer
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current);
+      debounceTimer.current = null;
+      setIsDebouncing(false);
+    }
+  }, [revokeAuth, events.length]);
 
   // Refresh events - Define this function BEFORE it's used in any useEffect
   const refreshEvents = useCallback(
@@ -152,217 +234,287 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
       maxResults = 250,
       forceRefresh = false
     ) => {
+      // Don't proceed if not authorized
       if (!isAuthorized) {
         console.log("Not authorized to refresh events");
+          return;
+      }
+
+      // Clear any previous debounce timer
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+        debounceTimer.current = null;
+      }
+
+      // Set debouncing state
+      setIsDebouncing(true);
+
+      // Create a debounced execution
+      return new Promise<void>((resolve, reject) => {
+        debounceTimer.current = setTimeout(async () => {
+          try {
+            // Validate and normalize dates - use our helper function instead of inline logic
+            const validatedDates = validateAndNormalizeDates(timeMin, timeMax);
+            timeMin = validatedDates.timeMin;
+            timeMax = validatedDates.timeMax;
+
+            // Check if this is a duplicate request with the same parameters
+            const requestKey = `${calendarId}:${timeMin}:${timeMax}`;
+
+            if (
+              !forceRefresh &&
+              lastFetchParams.current &&
+              lastFetchParams.current.calendarId === calendarId &&
+              lastFetchParams.current.timeMin === timeMin &&
+              lastFetchParams.current.timeMax === timeMax &&
+              Date.now() - lastFetchParams.current.timestamp < CACHE_EXPIRY_MS
+            ) {
+              console.log("Skipping duplicate request with same parameters");
+              setIsDebouncing(false);
+              resolve();
+              return;
+            }
+
+            // Update current request tracking
+            currentFetchRequest.current = requestKey;
+
+            // If we're forcing refresh, don't use cache
+            const cacheKey = getCacheKey(calendarId, timeMin, timeMax);
+
+            let cachedEvents = null;
+            if (!forceRefresh) {
+              cachedEvents = getFromCache(cacheKey);
+            }
+
+            // Use cached events if available
+            if (cachedEvents) {
+              console.log(`Using ${cachedEvents.length} events from cache`);
+
+              // Only update state if events are different
+              if (!isEqual(cachedEvents, events)) {
+                setEvents(cachedEvents);
+              }
+
+              setIsLoading(false);
+              setIsDebouncing(false);
+
+              // Store last fetch parameters
+              lastFetchParams.current = {
+          calendarId,
+          timeMin,
+          timeMax,
+                timestamp: Date.now(),
+              };
+
+              resolve();
+              return;
+            }
+
+            // If we got here, we need to fetch fresh data
+        setIsLoading(true);
+
+            // Get access token from backend with retry logic
+            console.log("Getting access token for events refresh");
+            let accessToken;
+            let retryCount = 0;
+
+            while (retryCount < 2) {
+              try {
+                const tokenResult = await getAccessToken();
+                if (tokenResult.success && tokenResult.accessToken) {
+                  accessToken = tokenResult.accessToken;
+                  break;
+                } else {
+                  console.warn("Failed to get access token, retrying...");
+                  // Wait a second before retrying
+                  await new Promise((r) => setTimeout(r, 1000));
+                  retryCount++;
+                }
+              } catch (error) {
+                console.error("Error getting access token:", error);
+                retryCount++;
+                // Wait a second before retrying
+                await new Promise((r) => setTimeout(r, 1000));
+              }
+            }
+
+            if (!accessToken) {
+              // If we failed to get a token even after retries
+              throw new Error(
+                "Failed to get access token after multiple attempts"
+              );
+            }
+
+            // Fetch events from Google Calendar API
+            console.log(
+              `Fetching events for ${calendarId} from ${timeMin} to ${timeMax}`
+            );
+
+            const url = new URL(
+              `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+                calendarId
+              )}/events`
+            );
+
+            url.searchParams.append("maxResults", maxResults.toString());
+            url.searchParams.append("timeMin", timeMin);
+            url.searchParams.append("timeMax", timeMax);
+            url.searchParams.append("singleEvents", "true");
+            url.searchParams.append("orderBy", "startTime");
+            url.searchParams.append("timeZone", localTimeZone);
+
+            const response = await fetch(url.toString(), {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            });
+
+            if (!response.ok) {
+              let errorText = await response.text();
+              console.error("Error response:", errorText);
+
+              // If it's an auth error, try to reconnect
+              if (response.status === 401) {
+                setError(
+                  new Error(
+                    "Authentication expired. Please reconnect to Google Calendar."
+                  )
+                );
+
+                // Reset auth state in Convex by calling revokeAuth
+                await revokeAuth();
+
+                throw new Error(
+                  `Authentication failed (401): Google Calendar token expired or invalid`
+                );
+        } else {
+                throw new Error(
+                  `Failed to fetch events: ${response.status} ${response.statusText}`
+                );
+              }
+            }
+
+            const data = await response.json();
+
+            // If this was canceled or a newer request came in, don't update state
+            if (currentFetchRequest.current !== requestKey) {
+              console.log("Request was superseded by a newer request");
+              setIsLoading(false);
+              setIsDebouncing(false);
+              resolve();
+              return;
+            }
+
+            // Save to cache
+            saveToCache(cacheKey, data.items);
+
+            // Only update state if events are different to avoid unnecessary rerenders
+            if (!isEqual(data.items, events)) {
+              setEvents(data.items || []);
+            }
+
+            // Store last fetch parameters
+            lastFetchParams.current = {
+          calendarId,
+          timeMin,
+          timeMax,
+              timestamp: Date.now(),
+            };
+
+            setIsLoading(false);
+            resolve();
+          } catch (err) {
+            console.error("Error refreshing events:", err);
+            setError(
+              err instanceof Error
+                ? err
+                : new Error("An error occurred while fetching events")
+            );
+            setIsLoading(false);
+            reject(err);
+          } finally {
+            setIsDebouncing(false);
+            debounceTimer.current = null;
+          }
+        }, DEBOUNCE_DELAY);
+      });
+    },
+    [isAuthorized, getAccessToken, events, revokeAuth]
+  );
+
+  // Handle direct auth events
+  useEffect(() => {
+    const handleDirectAuth = (event: CustomEvent) => {
+      console.log("Received direct auth event:", event.detail);
+
+      // Don't handle auth events if we're loading or not initialized properly
+      if (isLoading) {
+        console.log("Ignoring direct auth during loading state");
         return;
       }
 
-      try {
-        setIsLoading(true);
-        // Clear any previous error when starting a new refresh
-        setError(null);
-
-        // Default to current month if no time range specified
-        if (!timeMin || !timeMax) {
-          // Force create a new date to ensure we're using the correct date
-          const now = new Date();
-          // Verify this is a reasonable date (not in the far future)
-          const maxAllowedYear = new Date().getFullYear() + 1;
-          if (now.getFullYear() > maxAllowedYear) {
-            console.warn(
-              `Detected unreasonable date: ${now.toISOString()}, resetting to current date`
-            );
-            now.setFullYear(new Date().getFullYear());
-          }
-
-          console.log(
-            `Creating time range with current date: ${now.toISOString()}`
-          );
-          const monthStart = startOfMonth(now);
-          const monthEnd = endOfMonth(now);
-
-          timeMin = timeMin || monthStart.toISOString();
-          timeMax = timeMax || monthEnd.toISOString();
-        } else {
-          // Validate provided dates
-          const minDate = new Date(timeMin);
-          const maxDate = new Date(timeMax);
-          const maxAllowedYear = new Date().getFullYear() + 1;
-
-          if (
-            minDate.getFullYear() > maxAllowedYear ||
-            maxDate.getFullYear() > maxAllowedYear
-          ) {
-            console.warn(
-              `Detected unreasonable date range: ${timeMin} to ${timeMax}, using current month instead`
-            );
-            const now = new Date();
-            const monthStart = startOfMonth(now);
-            const monthEnd = endOfMonth(now);
-
-            timeMin = monthStart.toISOString();
-            timeMax = monthEnd.toISOString();
-          }
-        }
-
-        // Generate a request ID to track this specific fetch
-        const requestId = `${calendarId}_${timeMin}_${timeMax}_${Date.now()}`;
-        currentFetchRequest.current = requestId;
-
-        console.log(`Refreshing events for calendar: ${calendarId}`);
-        console.log(`Time range: ${timeMin} to ${timeMax}`);
-        console.log(`Using timezone: ${localTimeZone}`);
-
-        // Check cache first
-        const cacheKey = getCacheKey(calendarId, timeMin, timeMax);
-        const cachedEvents = !forceRefresh ? getFromCache(cacheKey) : null;
-
-        if (cachedEvents) {
-          console.log(`Using ${cachedEvents.length} cached events`);
-          // Only update state if the events are different
-          if (JSON.stringify(cachedEvents) !== JSON.stringify(events)) {
-            setEvents(cachedEvents);
-          }
-          return; // Exit early if we have cached data
-        }
-
-        // Get a fresh access token
-        const tokenResult = await getAccessToken();
-
-        if (!tokenResult.success) {
-          throw new Error(tokenResult.error || "Failed to get access token");
-        }
-
-        // Check if this request is still the current one
-        if (currentFetchRequest.current !== requestId) {
-          console.log("Ignoring stale request");
-          return;
-        }
-
-        // Make request to Google Calendar API
-        const apiUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
-        console.log(`Making API request to: ${apiUrl}`);
-
-        const url = new URL(apiUrl);
-        url.searchParams.append("maxResults", maxResults.toString());
-        url.searchParams.append("timeMin", timeMin);
-        url.searchParams.append("timeMax", timeMax);
-        url.searchParams.append("singleEvents", "true");
-        url.searchParams.append("orderBy", "startTime");
-        url.searchParams.append("timeZone", localTimeZone);
-
-        const requestUrl = url.toString();
-        console.log(`Full request URL: ${requestUrl}`);
-
-        const response = await fetch(requestUrl, {
-          headers: {
-            Authorization: `Bearer ${tokenResult.accessToken}`,
-          },
-        });
-
-        // Check if this request is still the current one
-        if (currentFetchRequest.current !== requestId) {
-          console.log("Ignoring stale request results");
-          return;
-        }
-
-        if (!response.ok) {
-          console.error(
-            `API error (${response.status}): ${response.statusText}`
-          );
-          throw new Error(`Failed to fetch events: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        console.log(`Received ${data?.items?.length || 0} events from API`);
-
-        if (data && data.items) {
-          // Only update if the data has actually changed
-          const newEvents = data.items;
-          if (JSON.stringify(newEvents) !== JSON.stringify(events)) {
-            setEvents(newEvents);
-            saveToCache(cacheKey, newEvents);
-          }
-        } else if (events.length > 0) {
-          // Only set to empty if we currently have events
-          setEvents([]);
-        }
-      } catch (err: any) {
-        console.error("Error refreshing events:", err);
-        setError(new Error(err.message || "Failed to refresh events"));
-      } finally {
-        setIsLoading(false);
+      // Extract the code from the event detail
+      const { code } = event.detail || {};
+      if (!code) {
+        console.error("No code found in direct auth event");
+        return;
       }
-    },
-    [isAuthorized, getAccessToken, events]
-  );
 
-  // Add a handler for direct auth events that may come from the router
-  useEffect(() => {
-    // Define the event handler as a regular function, NOT using useCallback
-    const handleDirectAuth = (event: CustomEvent) => {
-      if (event.detail && event.detail.code) {
-        console.log("Received direct auth code, processing...");
-        setIsLoading(true);
-        setError(null);
+      console.log("Exchanging code from direct auth event");
+      setIsLoading(true);
 
-        // Exchange the code for tokens
-        exchangeCodeForTokens({ code: event.detail.code })
-          .then((result) => {
-            if (result.success) {
-              console.log("Direct auth token exchange successful");
-              // Refresh events
-              const today = new Date();
-              const start = startOfMonth(today);
-              const end = endOfMonth(today);
+      // Exchange the code for tokens
+      exchangeCodeForTokens({ code })
+        .then((result) => {
+          console.log("Token exchange result:", result);
 
-              refreshEvents(
-                "primary",
-                start.toISOString(),
-                end.toISOString(),
-                250
-              );
+          if (result.success) {
+            eventsInitialized.current = false;
+            hasAttemptedInitialLoad.current = false;
 
-              // Set calendars if available
-              if (result.calendars) {
-                setCalendars({
-                  kind: "calendar#calendarList",
-                  etag: "",
-                  nextSyncToken: "",
-                  items: result.calendars,
-                });
-              }
-            } else {
-              console.error(
-                "Direct auth token exchange failed:",
-                result.message
-              );
-              setError(new Error(result.message || "Authentication failed"));
+            if (result.calendars) {
+              setCalendars({
+                kind: "calendar#calendarList",
+                etag: "",
+                nextSyncToken: "",
+                items: result.calendars,
+              });
             }
-          })
-          .catch((err) => {
-            console.error("Error in direct auth flow:", err);
-            setError(new Error(err.message || "Authentication failed"));
-          })
-          .finally(() => {
-            setIsLoading(false);
-          });
-      }
+          } else {
+            throw new Error(
+              result.message || "Failed to authenticate with Google Calendar"
+            );
+          }
+        })
+        .catch((err) => {
+          console.error("Error during token exchange:", err);
+          setError(
+            err instanceof Error
+              ? err
+              : new Error("Failed to authenticate with Google Calendar")
+          );
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
     };
 
-    // Listen for direct auth events
+    // Add the event listener
+    console.log("Adding GOOGLE_AUTH_DIRECT event listener");
     window.addEventListener(
       "GOOGLE_AUTH_DIRECT",
       handleDirectAuth as EventListener
     );
 
+    // Cleanup
     return () => {
+      console.log("Removing GOOGLE_AUTH_DIRECT event listener");
       window.removeEventListener(
         "GOOGLE_AUTH_DIRECT",
         handleDirectAuth as EventListener
       );
     };
-  }, [exchangeCodeForTokens, refreshEvents, setCalendars]);
+  }, [exchangeCodeForTokens, isLoading]);
 
   // Connect to Google Calendar
   const connectToGoogleCalendar = useCallback(async () => {
@@ -495,13 +647,13 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
       }
     } catch (err: any) {
       console.error("Error connecting to Google Calendar:", err);
-      setError(
+        setError(
         new Error(err.message || "Failed to connect to Google Calendar")
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [getAuthUrl, exchangeCodeForTokens, isLoading, setCalendars]);
+        );
+      } finally {
+        setIsLoading(false);
+      }
+  }, [getAuthUrl, exchangeCodeForTokens, isLoading]);
 
   // Initial events loading
   useEffect(() => {
@@ -510,6 +662,7 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
     if (
       isAuthorized &&
       !isLoading &&
+      !isDebouncing &&
       events.length === 0 &&
       !error &&
       !hasAttemptedInitialLoad.current
@@ -525,14 +678,17 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
         // Call refreshEvents in a way that doesn't create dependencies
         const fetchInitialEvents = async () => {
           try {
-            const today = new Date();
-            const start = startOfMonth(today);
-            const end = endOfMonth(today);
+            // Use current month for the initial load rather than a potentially future date
+            const now = new Date();
+            const start = startOfMonth(now);
+            const end = endOfMonth(now);
 
             await refreshEvents(
               "primary",
               start.toISOString(),
-              end.toISOString()
+              end.toISOString(),
+              250, // maxResults
+              true // forceRefresh to bypass cache
             );
           } catch (err) {
             console.error("Error loading initial events:", err);
@@ -543,7 +699,7 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
         void fetchInitialEvents();
       }
     }
-  }, [isAuthorized, isLoading, events.length, error]); // Removing refreshEvents from dependencies
+  }, [isAuthorized, isLoading, isDebouncing, events.length, error]); // Removing refreshEvents from dependencies
 
   return {
     isLoading,
@@ -555,5 +711,6 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
     disconnectFromGoogleCalendar,
     refreshEvents,
     clearError,
+    isDebouncing,
   };
 }

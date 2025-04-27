@@ -86,6 +86,25 @@ const applicationTables = {
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_user", ["userId"]),
+
+  googleCalendarEvents: defineTable({
+    userId: v.id("users"),
+    googleEventId: v.string(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    startDate: v.number(),
+    endDate: v.number(),
+    location: v.optional(v.string()),
+    isAllDay: v.boolean(),
+    color: v.optional(v.string()),
+    calendarId: v.string(),
+    lastSynced: v.number(),
+    etag: v.optional(v.string()),
+    originalEvent: v.optional(v.any()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_googleEventId", ["googleEventId"])
+    .index("by_date_range", ["userId", "startDate", "endDate"]),
 };
 
 export default defineSchema({
