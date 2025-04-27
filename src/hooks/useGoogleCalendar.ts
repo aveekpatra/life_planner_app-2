@@ -7,6 +7,9 @@ import { useMutation, useQuery, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { format, parseISO, startOfMonth, endOfMonth } from "date-fns";
 
+// Get the browser's timezone
+const localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 interface UseGoogleCalendarReturn {
   isLoading: boolean;
   error: Error | null;
@@ -22,11 +25,12 @@ interface UseGoogleCalendarReturn {
     maxResults?: number,
     forceRefresh?: boolean
   ) => Promise<void>;
+  clearError: () => void;
 }
 
 // Cache management for Google Calendar events
 const CACHE_KEY_PREFIX = "google_calendar_events_";
-const CACHE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
+const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes - reduced from 10 minutes for fresher data
 
 // Get a cache key for a specific time range
 const getCacheKey = (calendarId: string, timeMin: string, timeMax: string) => {
@@ -71,6 +75,7 @@ const getFromCache = (key: string): GoogleCalendarEvent[] | null => {
     return events;
   } catch (err) {
     console.error("Failed to retrieve events from cache:", err);
+    localStorage.removeItem(key); // Remove corrupted cache item
     return null;
   }
 };
@@ -81,10 +86,15 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
   const [events, setEvents] = useState<GoogleCalendarEvent[]>([]);
   const [calendars, setCalendars] = useState<GoogleCalendarList | null>(null);
 
-  // Add the missing ref initialization
+  // Refs for tracking state and preventing unnecessary rerenders
   const eventsInitialized = useRef(false);
-  // Move the hasAttemptedInitialLoad ref to the top level
   const hasAttemptedInitialLoad = useRef(false);
+  const currentFetchRequest = useRef<string | null>(null);
+
+  // Function to clear error state
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
 
   // Convex mutations, queries and actions - ensure they're always called
   const revokeAuth = useMutation(api.googleCalendarAuth.revokeAuth);
@@ -100,14 +110,30 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
   // Derive authorized state from the query result, not the raw query
   const isAuthorized = authStatusResult?.isAuthorized || false;
 
+  // Clear error when auth status changes
+  useEffect(() => {
+    if (error && !isAuthorized) {
+      setError(null);
+    }
+  }, [isAuthorized, error]);
+
   // Disconnect from Google Calendar
   const disconnectFromGoogleCalendar = useCallback(() => {
     // Clear from Convex
-    revokeAuth();
+    revokeAuth()
+      .then(() => {
+        console.log("Successfully revoked Google Calendar authorization");
+      })
+      .catch((err) => {
+        console.error("Error revoking authorization:", err);
+      });
 
     // Clear local state
     setEvents([]);
     setCalendars(null);
+    setError(null);
+    eventsInitialized.current = false;
+    hasAttemptedInitialLoad.current = false;
 
     // Clear all event caches
     Object.keys(localStorage).forEach((key) => {
@@ -133,19 +159,59 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
 
       try {
         setIsLoading(true);
+        // Clear any previous error when starting a new refresh
+        setError(null);
 
         // Default to current month if no time range specified
         if (!timeMin || !timeMax) {
+          // Force create a new date to ensure we're using the correct date
           const now = new Date();
+          // Verify this is a reasonable date (not in the far future)
+          const maxAllowedYear = new Date().getFullYear() + 1;
+          if (now.getFullYear() > maxAllowedYear) {
+            console.warn(
+              `Detected unreasonable date: ${now.toISOString()}, resetting to current date`
+            );
+            now.setFullYear(new Date().getFullYear());
+          }
+
+          console.log(
+            `Creating time range with current date: ${now.toISOString()}`
+          );
           const monthStart = startOfMonth(now);
           const monthEnd = endOfMonth(now);
 
           timeMin = timeMin || monthStart.toISOString();
           timeMax = timeMax || monthEnd.toISOString();
+        } else {
+          // Validate provided dates
+          const minDate = new Date(timeMin);
+          const maxDate = new Date(timeMax);
+          const maxAllowedYear = new Date().getFullYear() + 1;
+
+          if (
+            minDate.getFullYear() > maxAllowedYear ||
+            maxDate.getFullYear() > maxAllowedYear
+          ) {
+            console.warn(
+              `Detected unreasonable date range: ${timeMin} to ${timeMax}, using current month instead`
+            );
+            const now = new Date();
+            const monthStart = startOfMonth(now);
+            const monthEnd = endOfMonth(now);
+
+            timeMin = monthStart.toISOString();
+            timeMax = monthEnd.toISOString();
+          }
         }
+
+        // Generate a request ID to track this specific fetch
+        const requestId = `${calendarId}_${timeMin}_${timeMax}_${Date.now()}`;
+        currentFetchRequest.current = requestId;
 
         console.log(`Refreshing events for calendar: ${calendarId}`);
         console.log(`Time range: ${timeMin} to ${timeMax}`);
+        console.log(`Using timezone: ${localTimeZone}`);
 
         // Check cache first
         const cacheKey = getCacheKey(calendarId, timeMin, timeMax);
@@ -157,55 +223,69 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
           if (JSON.stringify(cachedEvents) !== JSON.stringify(events)) {
             setEvents(cachedEvents);
           }
-        } else {
-          // Get a fresh access token
-          const tokenResult = await getAccessToken();
+          return; // Exit early if we have cached data
+        }
 
-          if (!tokenResult.success) {
-            throw new Error(tokenResult.error || "Failed to get access token");
+        // Get a fresh access token
+        const tokenResult = await getAccessToken();
+
+        if (!tokenResult.success) {
+          throw new Error(tokenResult.error || "Failed to get access token");
+        }
+
+        // Check if this request is still the current one
+        if (currentFetchRequest.current !== requestId) {
+          console.log("Ignoring stale request");
+          return;
+        }
+
+        // Make request to Google Calendar API
+        const apiUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
+        console.log(`Making API request to: ${apiUrl}`);
+
+        const url = new URL(apiUrl);
+        url.searchParams.append("maxResults", maxResults.toString());
+        url.searchParams.append("timeMin", timeMin);
+        url.searchParams.append("timeMax", timeMax);
+        url.searchParams.append("singleEvents", "true");
+        url.searchParams.append("orderBy", "startTime");
+        url.searchParams.append("timeZone", localTimeZone);
+
+        const requestUrl = url.toString();
+        console.log(`Full request URL: ${requestUrl}`);
+
+        const response = await fetch(requestUrl, {
+          headers: {
+            Authorization: `Bearer ${tokenResult.accessToken}`,
+          },
+        });
+
+        // Check if this request is still the current one
+        if (currentFetchRequest.current !== requestId) {
+          console.log("Ignoring stale request results");
+          return;
+        }
+
+        if (!response.ok) {
+          console.error(
+            `API error (${response.status}): ${response.statusText}`
+          );
+          throw new Error(`Failed to fetch events: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log(`Received ${data?.items?.length || 0} events from API`);
+
+        if (data && data.items) {
+          // Only update if the data has actually changed
+          const newEvents = data.items;
+          if (JSON.stringify(newEvents) !== JSON.stringify(events)) {
+            setEvents(newEvents);
+            saveToCache(cacheKey, newEvents);
           }
-
-          // Make request to Google Calendar API
-          const apiUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
-          console.log(`Making API request to: ${apiUrl}`);
-
-          const url = new URL(apiUrl);
-          url.searchParams.append("maxResults", maxResults.toString());
-          url.searchParams.append("timeMin", timeMin);
-          url.searchParams.append("timeMax", timeMax);
-          url.searchParams.append("singleEvents", "true");
-          url.searchParams.append("orderBy", "startTime");
-
-          const requestUrl = url.toString();
-          console.log(`Full request URL: ${requestUrl}`);
-
-          const response = await fetch(requestUrl, {
-            headers: {
-              Authorization: `Bearer ${tokenResult.accessToken}`,
-            },
-          });
-
-          if (!response.ok) {
-            console.error(
-              `API error (${response.status}): ${response.statusText}`
-            );
-            throw new Error(`Failed to fetch events: ${response.statusText}`);
-          }
-
-          const data = await response.json();
-          console.log(`Received ${data?.items?.length || 0} events from API`);
-
-          if (data && data.items) {
-            // Only update if the data has actually changed
-            const newEvents = data.items;
-            if (JSON.stringify(newEvents) !== JSON.stringify(events)) {
-              setEvents(newEvents);
-              saveToCache(cacheKey, newEvents);
-            }
-          } else if (events.length > 0) {
-            // Only set to empty if we currently have events
-            setEvents([]);
-          }
+        } else if (events.length > 0) {
+          // Only set to empty if we currently have events
+          setEvents([]);
         }
       } catch (err: any) {
         console.error("Error refreshing events:", err);
@@ -223,6 +303,8 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
     const handleDirectAuth = (event: CustomEvent) => {
       if (event.detail && event.detail.code) {
         console.log("Received direct auth code, processing...");
+        setIsLoading(true);
+        setError(null);
 
         // Exchange the code for tokens
         exchangeCodeForTokens({ code: event.detail.code })
@@ -255,10 +337,15 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
                 "Direct auth token exchange failed:",
                 result.message
               );
+              setError(new Error(result.message || "Authentication failed"));
             }
           })
           .catch((err) => {
             console.error("Error in direct auth flow:", err);
+            setError(new Error(err.message || "Authentication failed"));
+          })
+          .finally(() => {
+            setIsLoading(false);
           });
       }
     };
@@ -275,7 +362,7 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
         handleDirectAuth as EventListener
       );
     };
-  }, [exchangeCodeForTokens, refreshEvents, setCalendars]); // Include all dependencies
+  }, [exchangeCodeForTokens, refreshEvents, setCalendars]);
 
   // Connect to Google Calendar
   const connectToGoogleCalendar = useCallback(async () => {
@@ -380,6 +467,8 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
 
         if (result.success) {
           console.log("Token exchange successful");
+          eventsInitialized.current = false;
+          hasAttemptedInitialLoad.current = false;
 
           // Only refresh events if we need to - don't do it immediately here
           // This avoids potential double-loads with the useEffect
@@ -465,5 +554,6 @@ export function useGoogleCalendar(): UseGoogleCalendarReturn {
     connectToGoogleCalendar,
     disconnectFromGoogleCalendar,
     refreshEvents,
+    clearError,
   };
 }
