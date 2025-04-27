@@ -1,0 +1,61 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Convex Implementation
+
+This project uses Convex as the backend service, providing database, authentication, and API functionality.
+
+## Structure
+
+- [convex/schema.ts](mdc:convex/schema.ts) - Defines database tables and indexes
+- [convex/_generated/api.d.ts](mdc:convex/_generated/api.d.ts) - Auto-generated type definitions for API endpoints
+- [convex/googleCalendarAuth.ts](mdc:convex/googleCalendarAuth.ts) - Google Calendar authentication functions
+- [convex/tasks.ts](mdc:convex/tasks.ts) - Task management functions
+- [convex/projects.ts](mdc:convex/projects.ts) - Project management functions
+- [convex/notes.ts](mdc:convex/notes.ts) - Notes management functions
+- [convex/events.ts](mdc:convex/events.ts) - Events management functions
+- [convex/http.ts](mdc:convex/http.ts) - HTTP endpoints for external services
+
+## Function Types
+
+### Queries
+- Read-only operations that fetch data from the database
+- Used with `useQuery` hook in the frontend
+- Example: `getAuthStatus` in googleCalendarAuth.ts
+
+### Mutations
+- Write operations that modify data in the database
+- Used with `useMutation` hook in the frontend
+- Example: `saveAuthData` in googleCalendarAuth.ts
+
+### Actions
+- External API requests and complex operations
+- Not constrained by database transaction limitations
+- Used with `useAction` hook in the frontend
+- Example: `getAuthUrl` and `exchangeCodeForTokens` in googleCalendarAuth.ts
+
+## Authentication Implementation
+
+The Google Calendar authentication is implemented using Convex actions and mutations:
+
+1. `getAuthUrl` action - Generates OAuth URL for Google authentication
+2. `exchangeCodeForTokens` action - Exchanges auth code for access/refresh tokens
+3. `saveAuthData` mutation - Stores tokens in the database
+4. `refreshAccessToken` action - Refreshes expired access tokens
+5. `getAccessToken` action - Retrieves valid access token
+6. `revokeAuth` mutation - Revokes Google Calendar authorization
+
+## Frontend Integration
+
+- [src/hooks/useGoogleCalendar.ts](mdc:src/hooks/useGoogleCalendar.ts) - Connects frontend to Convex backend
+- Frontend components call Convex functions using generated types from `_generated/api.ts`
+- Authentication state is managed through Convex queries and local state
+
+## Best Practices
+
+- Always use proper validators for function arguments using `v` from 'convex/values'
+- Implement proper error handling in actions that make external API calls
+- Structure database tables with appropriate indexes for query optimization
+- Keep actions small and focused on specific tasks

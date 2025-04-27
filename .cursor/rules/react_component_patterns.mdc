@@ -1,0 +1,75 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# React Component Patterns
+
+This project follows specific React patterns for consistent component development and state management.
+
+## Component Structure
+
+### UI Components
+- Located in [src/components/ui/](mdc:src/components/ui/)
+- Reusable, stateless components based on Shadcn UI
+- Follows atomic design principles
+
+### Feature Components
+- Located in [src/components/](mdc:src/components/)
+- Implements specific features like `CalendarWidget.tsx` and `CalendarTimeline.tsx`
+- May contain business logic and state management
+
+## State Management
+
+### Local State
+- Used for UI-specific state (e.g., expanded/collapsed, active tab)
+- Implemented with `useState` hook
+
+### Refs
+- Used for values that don't trigger re-renders via `useRef`
+- Common patterns:
+  - `previousDateRange.current` to track previous request parameters
+  - Tracking initialization state with `hasAttemptedInitialLoad.current`
+
+### Custom Hooks
+- [src/hooks/](mdc:src/hooks/) contains reusable logic
+- `useGoogleCalendar.ts` encapsulates all Google Calendar functionality
+- Hooks abstract complex logic away from components
+
+## Performance Optimizations
+
+### Memoization
+- `useMemo` for expensive computations
+- `useCallback` for stable function references passed as props
+- Example: `sortedEvents` in CalendarTimeline is memoized based on filtered events
+
+### Debounce Patterns
+- Prevents excessive API calls on frequent state changes
+- Used in event fetching logic
+
+### Conditional Rendering
+- Components handle loading, error, and empty states gracefully
+- Prevents rendering of components with insufficient data
+
+## Event Handling
+
+### Callbacks
+- Consistent naming convention: `handle[EventName]` (e.g., `handleViewChange`)
+- Event handlers defined with `useCallback` when passed as props
+
+### Side Effects
+- `useEffect` with proper dependency arrays
+- Clear separation of concerns between effects
+- Effects for:
+  1. Data fetching
+  2. Processing API responses
+  3. Subscription/listener management
+  4. Cleanup operations
+
+## Best Practices
+
+- Props destructuring for cleaner component signatures
+- Early returns for conditional rendering
+- Consistent error handling patterns
+- Component composition over inheritance
+- Careful management of effect dependencies to prevent infinite loops

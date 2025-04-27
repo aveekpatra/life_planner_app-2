@@ -20,18 +20,27 @@ The app features a comprehensive Google Calendar integration to display and mana
 - [src/components/CalendarTimeline.tsx](mdc:src/components/CalendarTimeline.tsx) - Timeline visualization of events
 
 ## Authentication Flow
-1. User authorizes with Google OAuth
-2. Tokens stored in both localStorage (temporary) and Convex (persistent)
+1. User authorizes with Google OAuth via popup window
+2. Access and refresh tokens stored in Convex database
 3. Refresh tokens used for silent re-authentication
+4. Handles token expiration and renewal automatically
 
 ## Event Handling
 - Fetches events based on current view (week/month)
-- Caches events in localStorage for 10 minutes
-- Combines Google events with local events
+- Caches events in localStorage for 5 minutes to reduce API calls
+- Displays Google Calendar events with proper color coding based on event/calendar colors
 - Supports viewing both all-day and timed events
+- Uses date range tracking to avoid redundant API calls
 
 ## Optimizations
-- Event data is cached to reduce API calls
-- Auto-refreshes on view changes
-- Handles multiple calendars
-- Appropriate error handling for API limits
+- Uses `previousDateRange` ref to prevent duplicate refreshes of the same date range
+- Implements debounce pattern for frequent date changes
+- Handles state management carefully to avoid infinite render loops
+- Proper error handling for API limits and auth failures
+- Responsive design for different screen sizes
+
+## State Management
+- Controls loading states to provide feedback during API operations
+- Maintains authorization state through Convex queries
+- Processes and normalizes event data for consistent display
+- Provides user feedback during connection process
