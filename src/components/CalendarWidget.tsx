@@ -5,6 +5,8 @@ import { useGoogleCalendar } from "../hooks/useGoogleCalendar";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { GoogleCalendarEvent } from "../services/GoogleCalendarService";
+import { api } from "../../convex/_generated/api";
+import { useAction } from "convex/react";
 import {
   format,
   getDaysInMonth,
@@ -108,6 +110,10 @@ export function CalendarWidget() {
   >([]);
   const previousDateRange = useRef("");
 
+  const syncAllCalendars = useAction(
+    api.googleCalendarEvents.syncEventsFromAllCalendars
+  );
+
   const {
     isLoading,
     error,
@@ -165,12 +171,22 @@ export function CalendarWidget() {
         `Refreshing Google Calendar events from ${startTimeStr} to ${endTimeStr}`
       );
       try {
+        // First refresh from primary calendar to get UI updated quickly
         await refreshEvents("primary", startTimeStr, endTimeStr);
+
+        // Then sync from all calendars to ensure we get everything
+        const result = await syncAllCalendars({
+          timeMin: startTimeStr,
+          timeMax: endTimeStr,
+          maxResults: 250,
+        });
+
+        console.log("Synced events from all calendars:", result);
       } catch (error) {
         console.error("Error refreshing Google Calendar events:", error);
       }
     },
-    [isAuthorized, refreshEvents]
+    [isAuthorized, refreshEvents, syncAllCalendars]
   );
 
   useEffect(() => {
@@ -245,7 +261,15 @@ export function CalendarWidget() {
       try {
         // Refresh Google Calendar events if authorized
         if (isAuthorized) {
-          void refreshGoogleCalendarEvents(startTimeStr, endTimeStr);
+          // First refresh primary calendar for immediate UI update
+          void refreshEvents("primary", startTimeStr, endTimeStr);
+
+          // Then sync from all calendars to ensure we get comprehensive data
+          void syncAllCalendars({
+            timeMin: startTimeStr,
+            timeMax: endTimeStr,
+            maxResults: 250,
+          });
         }
       } catch (error) {
         console.error("Error fetching events:", error);
@@ -259,6 +283,7 @@ export function CalendarWidget() {
     view,
     isAuthorized,
     refreshGoogleCalendarEvents,
+    syncAllCalendars,
   ]);
 
   // Navigate to previous/next month or week
@@ -423,7 +448,7 @@ export function CalendarWidget() {
         `Manual refresh for: ${startDate.toISOString()} to ${endDate.toISOString()}`
       );
 
-      // Use void to ignore the Promise
+      // First refresh primary calendar for immediate UI update
       void refreshEvents(
         "primary",
         startDate.toISOString(),
@@ -431,6 +456,13 @@ export function CalendarWidget() {
         250, // maxResults
         true // forceRefresh - force refresh from API
       );
+
+      // Then sync from all calendars
+      void syncAllCalendars({
+        timeMin: startDate.toISOString(),
+        timeMax: endDate.toISOString(),
+        maxResults: 250,
+      });
     } else {
       console.log("Cannot refresh - not authorized with Google Calendar");
     }
