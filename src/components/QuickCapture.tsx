@@ -180,7 +180,7 @@ export function QuickCapture() {
   return (
     <Card className="w-full">
       <CardHeader>
-        <CardTitle>Quick Capture</CardTitle>
+        <CardTitle className="text-xl font-heading">Quick Capture</CardTitle>
         <CardDescription>
           Capture your thoughts, tasks, and ideas quickly
         </CardDescription>

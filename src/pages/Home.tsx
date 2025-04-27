@@ -41,7 +41,7 @@ function Content() {
           <Card className="w-full max-w-md apple-card">
             <CardContent className="pt-6 space-y-6">
               <div className="space-y-4">
-                <h1 className="text-3xl font-medium text-foreground">
+                <h1 className="text-3xl font-medium text-foreground font-heading">
                   Welcome to Zenify
                 </h1>
                 <p className="text-muted-foreground max-w-md mx-auto">
@@ -63,8 +63,8 @@ function Content() {
             <QuickCapture />
             <Separator className="my-8" />
             <div className="flex flex-col gap-10">
-              <TasksWidget />
               <ProjectsWidget />
+              <TasksWidget />
               <CalendarWidget />
               <NotesWidget />
             </div>

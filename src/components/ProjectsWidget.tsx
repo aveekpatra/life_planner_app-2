@@ -244,7 +244,7 @@ export function ProjectsWidget() {
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle>Projects</CardTitle>
+          <CardTitle className="text-xl font-heading">Projects</CardTitle>
           <Tabs
             value={view}
             onValueChange={(v) => setView(v as ViewType)}

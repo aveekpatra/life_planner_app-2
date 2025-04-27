@@ -59,6 +59,25 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Track if timeline is actively transitioning
+  const [isTimelineTransitioning, setIsTimelineTransitioning] =
+    React.useState(false);
+
+  // Handle timeline transitions
+  React.useEffect(() => {
+    if (showTimeline) {
+      // When showing, immediately start transitioning
+      setIsTimelineTransitioning(true);
+    } else {
+      // When hiding, keep transitioning state during animation
+      setIsTimelineTransitioning(true);
+      const timer = setTimeout(() => {
+        setIsTimelineTransitioning(false);
+      }, 300); // Match duration with CSS transition
+      return () => clearTimeout(timer);
+    }
+  }, [showTimeline]);
+
   // Handle Google Calendar connection
   const handleGoogleCalendarConnect = async () => {
     if (isLoading) return; // Prevent multiple clicks while loading
@@ -109,7 +128,8 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
 
   // Calculate padding classes based on sidebar states
   const getMainContentClasses = () => {
-    let classes = "flex-1 py-6 overflow-auto transition-all duration-300 ";
+    let classes =
+      "flex-1 py-6 overflow-auto transition-all duration-300 ease-in-out ";
 
     // Horizontal padding based on both sidebars
     if (isLeftSidebarCollapsed && !showTimeline) {
@@ -162,48 +182,6 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
             {!isAuthorized && <ExternalLink className="h-3 w-3 ml-1" />}
           </Button>
 
-          {/* Debug button */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              if (!connectionTestRunning.current) {
-                connectionTestRunning.current = true;
-                const testEndpoint =
-                  "https://clean-armadillo-885.convex.cloud/api/debug";
-                console.log("Testing Convex connection...");
-                fetch(testEndpoint)
-                  .then((response) => {
-                    console.log(
-                      "Convex test response status:",
-                      response.status
-                    );
-                    return response.text();
-                  })
-                  .then((text) => {
-                    console.log("Convex test response:", text);
-                    toast({
-                      title: "Connection Test",
-                      description: "Check console for details",
-                    });
-                  })
-                  .catch((err) => {
-                    console.error("Convex test error:", err);
-                    toast({
-                      title: "Connection Error",
-                      description: err.message,
-                      variant: "destructive",
-                    });
-                  })
-                  .finally(() => {
-                    connectionTestRunning.current = false;
-                  });
-              }
-            }}
-          >
-            Test Connection
-          </Button>
-
           <Button
             variant="ghost"
             size="sm"
@@ -218,17 +196,27 @@ function ResponsiveContent({ children }: { children: React.ReactNode }) {
 
       <div className="flex h-[calc(100vh-65px)] relative w-full max-w-full overflow-x-hidden">
         <main
-          className={`${getMainContentClasses()} ${showTimeline ? "w-[calc(100%-384px)]" : "w-full"} max-w-full`}
+          className={`${getMainContentClasses()} transition-all duration-300 ease-in-out ${
+            showTimeline ? "w-[calc(100%-384px)]" : "w-full"
+          } max-w-full`}
         >
           <div className="w-full max-w-full">{children}</div>
         </main>
 
-        {/* Calendar Timeline */}
-        {showTimeline && (
-          <div className="h-full w-96 border-l border-border flex-shrink-0">
+        {/* Calendar Timeline - using animation instead of conditional rendering */}
+        <div
+          className={`h-full w-96 border-l border-border flex-shrink-0 transition-all duration-300 ease-in-out transform ${
+            showTimeline
+              ? "translate-x-0 opacity-100 z-10"
+              : "translate-x-full opacity-0 -z-10"
+          } absolute right-0 top-0 bottom-0 shadow-lg`}
+          aria-hidden={!showTimeline}
+        >
+          {/* Only render timeline content when it's showing or during transition */}
+          {(showTimeline || isTimelineTransitioning) && (
             <CalendarTimeline onClose={toggleTimeline} />
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </SidebarInset>
   );

@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -116,9 +116,19 @@
       "rlig" 1,
       "calt" 1;
     font-family:
-      -apple-system, BlinkMacSystemFont, "Inter Variable", ui-sans-serif,
-      system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans",
-      sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+      "Inter",
+      -apple-system,
+      BlinkMacSystemFont,
+      ui-sans-serif,
+      system-ui,
+      "Segoe UI",
+      "Helvetica Neue",
+      Arial,
+      "Noto Sans",
+      sans-serif,
+      "Apple Color Emoji",
+      "Segoe UI Emoji",
+      "Segoe UI Symbol",
       "Noto Color Emoji";
   }
 
@@ -169,5 +179,21 @@
 
   [data-sidebar="footer"] {
     @apply border-t border-border;
+  }
+}
+
+@layer utilities {
+  .font-heading {
+    font-family:
+      "Poppins",
+      -apple-system,
+      BlinkMacSystemFont,
+      ui-sans-serif,
+      system-ui,
+      "Segoe UI",
+      "Helvetica Neue",
+      Arial,
+      "Noto Sans",
+      sans-serif;
   }
 }

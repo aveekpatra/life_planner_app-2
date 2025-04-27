@@ -74,12 +74,43 @@ const convertGoogleEvent = (event: GoogleCalendarEvent) => {
     color = colorMap[event.colorId] || color;
   }
 
+  // Parse the dates correctly respecting timezone information
+  const parseEventDate = (
+    dateStr: string,
+    timeZone?: string,
+    isEnd?: boolean
+  ) => {
+    if (!dateStr) return new Date(0).getTime();
+
+    // If it's just a date (all-day event), handle it specially to avoid timezone issues
+    if (dateStr.length === 10) {
+      // YYYY-MM-DD format for all-day events
+      // Parse the date parts directly to avoid timezone conversion problems
+      const [year, month, day] = dateStr.split("-").map(Number);
+
+      // For all-day events, Google Calendar uses an exclusive end date
+      // This means an event ending on "2023-06-15" actually ends at the start of that day
+      // So for end dates, we need to subtract 1 day to get the actual inclusive end
+      if (isEnd) {
+        // Subtract 1 day for end dates of all-day events
+        return new Date(year, month - 1, day - 1, 23, 59, 59, 999).getTime();
+      }
+
+      // Create a date that preserves the exact day (no timezone offset)
+      // Month is 0-indexed in JavaScript Date
+      return new Date(year, month - 1, day, 0, 0, 0, 0).getTime();
+    }
+
+    // For datetime strings, use the browser's timezone handling
+    return new Date(dateStr).getTime();
+  };
+
   return {
     _id: event.id,
     title: event.summary,
     description: event.description || "",
-    startDate: new Date(startDateTime).getTime(),
-    endDate: new Date(endDateTime).getTime(),
+    startDate: parseEventDate(startDateTime, event.start.timeZone, false),
+    endDate: parseEventDate(endDateTime, event.end.timeZone, true),
     location: event.location || "",
     isAllDay: !event.start.dateTime,
     color: color,
@@ -365,24 +396,45 @@ export function CalendarWidget() {
     if (!googleEvents || googleEvents.length === 0) return [];
 
     console.log(`Checking for events on date: ${date.toISOString()}`);
-    const formattedTargetDate = date.toISOString().split("T")[0]; // YYYY-MM-DD
+
+    // Format the target date as YYYY-MM-DD for accurate comparison
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const day = date.getDate();
+
+    // Get the start and end of the target day in local time
+    const targetDayStart = new Date(year, month, day, 0, 0, 0, 0).getTime();
+    const targetDayEnd = new Date(year, month, day, 23, 59, 59, 999).getTime();
 
     // Convert Google events to our format for easier handling
     const convertedEvents = googleEvents.map(convertGoogleEvent);
 
     return convertedEvents.filter((event) => {
-      const eventStart = new Date(event.startDate);
-      const eventEnd = new Date(event.endDate);
+      // For all-day events, we need to check if the target date falls within the event's date range
+      if (event.isAllDay) {
+        const eventStartTime = event.startDate;
+        const eventEndTime = event.endDate;
 
-      // Format dates to YYYY-MM-DD for comparison
-      const eventStartDate = eventStart.toISOString().split("T")[0];
-      const eventEndDate = eventEnd.toISOString().split("T")[0];
+        // An all-day event overlaps with our target day if:
+        // 1. The event starts on or before the end of our target day AND
+        // 2. The event ends on or after the start of our target day
+        return eventStartTime <= targetDayEnd && eventEndTime >= targetDayStart;
+      } else {
+        // For regular events, check if they overlap with the target day
+        const eventStartTime = event.startDate;
+        const eventEndTime = event.endDate;
 
-      // Check if the target date falls within the event's start and end dates
-      return (
-        formattedTargetDate >= eventStartDate &&
-        formattedTargetDate <= eventEndDate
-      );
+        // A regular event overlaps with our target day if:
+        // 1. It starts during our target day, OR
+        // 2. It ends during our target day, OR
+        // 3. It starts before and ends after our target day (spans over it)
+        return (
+          (eventStartTime >= targetDayStart &&
+            eventStartTime <= targetDayEnd) || // Starts during day
+          (eventEndTime >= targetDayStart && eventEndTime <= targetDayEnd) || // Ends during day
+          (eventStartTime <= targetDayStart && eventEndTime >= targetDayEnd) // Spans over day
+        );
+      }
     });
   };
 
@@ -480,7 +532,9 @@ export function CalendarWidget() {
   return (
     <div className="bg-card rounded-lg border shadow-sm p-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-3">
-        <h2 className="text-xl font-medium text-card-foreground">Calendar</h2>
+        <h2 className="text-xl font-medium text-card-foreground font-heading">
+          Calendar
+        </h2>
 
         <div className="flex flex-wrap items-center gap-3 justify-between">
           <Tabs
@@ -751,13 +805,16 @@ export function CalendarWidget() {
                     {/* Timed events section */}
                     <div className="space-y-1 overflow-auto max-h-[120px]">
                       {timedEvents.map((event) => {
-                        const startTime = format(
-                          new Date(event.startDate),
-                          "h:mm a"
-                        );
+                        // Use the locale string format for consistent timezone display
+                        const eventStartDate = new Date(event.startDate);
+                        const eventEndDate = new Date(event.endDate);
+
+                        // Format time with timezone consideration
+                        const startTime = format(eventStartDate, "h:mm a");
+
                         const duration = differenceInMinutes(
-                          new Date(event.endDate),
-                          new Date(event.startDate)
+                          eventEndDate,
+                          eventStartDate
                         );
 
                         const durationText =
@@ -799,95 +856,6 @@ export function CalendarWidget() {
             })}
           </div>
         )}
-      </div>
-
-      {/* Upcoming events */}
-      <div className="mt-6">
-        <h3 className="text-sm font-medium mb-3">Upcoming Events</h3>
-        <div className="space-y-3">
-          {processedEvents.length === 0 ? (
-            <p className="text-center py-8 text-muted-foreground">
-              No events yet
-            </p>
-          ) : (
-            processedEvents
-              // Filter to only show upcoming events (today and future)
-              .filter((event) => {
-                const now = new Date().getTime();
-                return event.endDate >= now;
-              })
-              // Sort by start date
-              .sort((a, b) => a.startDate - b.startDate)
-              .slice(0, 5)
-              .map((event) => {
-                const startDate = new Date(event.startDate);
-                const endDate = new Date(event.endDate);
-                const isEventToday = isToday(startDate);
-                const isTomorrow = isToday(addDays(startDate, -1));
-
-                // Format the date label based on when event occurs
-                let dateLabel = format(startDate, "EEE, MMM d");
-
-                if (isEventToday) {
-                  dateLabel = "Today";
-                } else if (isTomorrow) {
-                  dateLabel = "Tomorrow";
-                }
-
-                return (
-                  <div
-                    key={event._id}
-                    className="p-3 border rounded-md flex items-start gap-3"
-                    style={{
-                      borderLeftWidth: "4px",
-                      borderLeftColor: event.color || "#3b82f6",
-                    }}
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium text-sm flex items-center gap-1.5">
-                          <div
-                            className="w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: event.color }}
-                          />
-                          {event.title}
-                        </h4>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-secondary">
-                          {event.category || "Google Calendar"}
-                        </span>
-                      </div>
-                      {event.description && (
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                          {event.description}
-                        </p>
-                      )}
-                      <div className="mt-1.5 flex items-center text-xs text-muted-foreground">
-                        <span className="font-medium">{dateLabel}</span>
-                        <span className="mx-1.5">•</span>
-                        {event.isAllDay ? (
-                          <span>All day</span>
-                        ) : (
-                          <span>
-                            {format(startDate, "h:mm a")}
-                            {" - "}
-                            {format(endDate, "h:mm a")}
-                          </span>
-                        )}
-                        {event.location && (
-                          <>
-                            <span className="mx-1.5">•</span>
-                            <span className="truncate max-w-[150px]">
-                              {event.location}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-          )}
-        </div>
       </div>
     </div>
   );

@@ -121,12 +121,39 @@ const convertGoogleEvent = (event: GoogleCalendarEvent): Event => {
     color = colorMap[event.colorId] || color;
   }
 
+  // Parse event dates correctly, handling all-day events specially
+  const parseEventDate = (dateStr: string, isEnd?: boolean) => {
+    if (!dateStr) return new Date(0).getTime();
+
+    // If it's just a date (all-day event), handle it specially to avoid timezone issues
+    if (dateStr.length === 10) {
+      // YYYY-MM-DD format for all-day events
+      // Parse the date parts directly to avoid timezone conversion problems
+      const [year, month, day] = dateStr.split("-").map(Number);
+
+      // For all-day events, Google Calendar uses an exclusive end date
+      // This means an event ending on "2023-06-15" actually ends at the start of that day
+      // So for end dates, we need to subtract 1 day to get the actual inclusive end
+      if (isEnd) {
+        // Subtract 1 day for end dates of all-day events
+        return new Date(year, month - 1, day - 1, 23, 59, 59, 999).getTime();
+      }
+
+      // Create a date that preserves the exact day (no timezone offset)
+      // Month is 0-indexed in JavaScript Date
+      return new Date(year, month - 1, day, 0, 0, 0, 0).getTime();
+    }
+
+    // For datetime strings, use the browser's timezone handling
+    return new Date(dateStr).getTime();
+  };
+
   return {
     _id: event.id,
     title: event.summary,
     description: event.description || "",
-    startDate: new Date(startDateTime).getTime(),
-    endDate: new Date(endDateTime).getTime(),
+    startDate: parseEventDate(startDateTime, false),
+    endDate: parseEventDate(endDateTime, true),
     location: event.location || "",
     isAllDay: !event.start.dateTime,
     color: color,

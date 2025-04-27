@@ -6,7 +6,9 @@ export function NotesWidget() {
 
   return (
     <div className="bg-card rounded-lg border shadow-sm p-6">
-      <h2 className="text-xl font-medium text-card-foreground mb-4">Notes</h2>
+      <h2 className="text-xl font-medium text-card-foreground mb-4 font-heading">
+        Notes
+      </h2>
       <div className="space-y-3">
         {notes.length === 0 ? (
           <div className="text-center py-10 text-muted-foreground">

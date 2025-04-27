@@ -41,7 +41,9 @@ export function TodoWidget() {
   return (
     <div className="apple-card h-full flex flex-col">
       <div className="p-5 border-b border-white/20">
-        <h2 className="text-xl font-medium text-foreground">Tasks</h2>
+        <h2 className="text-xl font-medium text-foreground font-heading">
+          Tasks
+        </h2>
         <p className="text-sm text-muted-foreground mt-1">
           Manage your daily tasks and to-dos
         </p>
